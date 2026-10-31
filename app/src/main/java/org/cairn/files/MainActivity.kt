@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.DateFormat
 import java.util.Date
+import kotlinx.coroutines.launch
 
 val ROOT: File = Environment.getExternalStorageDirectory()
 val BIN = File(ROOT, ".cairn-bin")
@@ -129,40 +130,49 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun App(tick: Int) {
     val ctx = LocalContext.current
-    val prefs = remember { ctx.getSharedPreferences("cairn", 0) }
-    var dark by remember { mutableStateOf(prefs.getBoolean("dark", true)) }
+    remember { S.load(ctx) }
     val granted = remember(tick) { Environment.isExternalStorageManager() }
     var rev by remember { mutableIntStateOf(0) }
-    var tab by remember { mutableIntStateOf(0) }
-    var cat by remember { mutableStateOf<Cat?>(null) }
-    var dirs by remember { mutableStateOf(listOf(ROOT)) }
+    var stack by remember { mutableStateOf(listOf<Dest>(if (S.startBrowse) Dest.Browse(ROOT) else Dest.Home)) }
     val scan by produceState<Scan?>(null, granted, rev) {
         if (granted) value = withContext(Dispatchers.IO) { doScan() }
     }
-    BackHandler(enabled = (tab == 0 && cat != null) || (tab == 1 && dirs.size > 1)) {
-        if (tab == 0) cat = null else dirs = dirs.dropLast(1)
+    val ds = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    fun go(d: Dest) { stack = stack + d }
+    fun back() { stack = stack.dropLast(1) }
+    fun nav(d: Dest) {
+        stack = if (d is Dest.Home || (d is Dest.Browse && d.dir == ROOT)) listOf(d) else listOf(Dest.Home, d)
+        scope.launch { ds.close() }
     }
-    val scheme = if (dark) darkColorScheme(
+    BackHandler(enabled = stack.size > 1) { back() }
+    BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
+    val top = stack.last()
+    val scheme = if (S.dark) darkColorScheme(
         primary = Color(0xFF3B9BE8), background = Color(0xFF111418), surface = Color(0xFF111418), surfaceContainer = Color(0xFF1B2128)
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
-        Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                    NavigationBarItem(tab == 0, { tab = 0 }, { Icon(Icons.Rounded.Home, null) }, label = { Text("Home") })
-                    NavigationBarItem(tab == 1, { tab = 1 }, { Icon(Icons.Rounded.Folder, null) }, label = { Text("Browse") })
+        ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                        NavigationBarItem(top is Dest.Home, { nav(Dest.Home) }, { Icon(Icons.Rounded.Home, null) }, label = { Text("Home") })
+                        NavigationBarItem(top is Dest.Browse, { nav(Dest.Browse(ROOT)) }, { Icon(Icons.Rounded.Folder, null) }, label = { Text("Browse") })
+                    }
                 }
-            }
-        ) { pad ->
-            Box(Modifier.padding(pad).fillMaxSize()) {
-                val c = cat
-                when {
-                    !granted -> Perm()
-                    tab == 0 && c == Cat.Bin -> BinScreen(rev, { rev++ }) { cat = null }
-                    tab == 0 && c != null -> CatScreen(c) { cat = null }
-                    tab == 0 -> Home(scan, dark, { dark = !dark; prefs.edit().putBoolean("dark", dark).apply() }, { rev++ }) { cat = it }
-                    else -> Browse(dirs.last(), dirs.size > 1, rev, { rev++ }, { dirs = dirs + it }) { dirs = dirs.dropLast(1) }
+            ) { pad ->
+                Box(Modifier.padding(pad).fillMaxSize()) {
+                    if (!granted) Perm() else when (val d = top) {
+                        is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }) { go(Dest.Category(it)) }
+                        is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
+                        is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } })
+                        is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
+                        is Dest.Search -> SearchScreen(d.q, { back() }) { go(Dest.Browse(it)) }
+                        is Dest.Remotes -> ServersScreen({ back() }) { go(Dest.Net(it)) }
+                        is Dest.Net -> RemoteScreen(d.s) { back() }
+                        is Dest.Settings -> SettingsScreen(d.page, { go(Dest.Settings(it)) }) { back() }
+                    }
                 }
             }
         }
@@ -177,14 +187,14 @@ fun Perm() {
         Spacer(Modifier.height(16.dp))
         Text("Allow access to all files", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Cairn needs this to browse and manage your storage. The app has no internet permission, so nothing leaves your device.", textAlign = TextAlign.Center, modifier = Modifier.alpha(.7f))
+        Text("Cairn needs this to browse and manage your storage. Cairn only uses the network when you open an FTP or SMB server that you added yourself.", textAlign = TextAlign.Center, modifier = Modifier.alpha(.7f))
         Spacer(Modifier.height(24.dp))
         Button({ ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))) }) { Text("Open settings") }
     }
 }
 
 @Composable
-fun Home(scan: Scan?, dark: Boolean, onTheme: () -> Unit, onRefresh: () -> Unit, onCat: (Cat) -> Unit) {
+fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onCat: (Cat) -> Unit) {
     val ctx = LocalContext.current
     val st = remember { StatFs(ROOT.path) }
     val total = st.totalBytes; val free = st.availableBytes
@@ -194,9 +204,10 @@ fun Home(scan: Scan?, dark: Boolean, onTheme: () -> Unit, onRefresh: () -> Unit,
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("My Files", fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 IconButton(onRefresh) { Icon(Icons.Rounded.Refresh, "Refresh") }
-                IconButton(onTheme) { Icon(if (dark) Icons.Rounded.LightMode else Icons.Rounded.DarkMode, "Theme") }
+                IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
             }
         }
+        item { var q by remember { mutableStateOf("") }; SearchField(q, { q = it }) { onSearch(q) } }
         item {
             Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                 Column(Modifier.padding(20.dp)) {
@@ -263,40 +274,98 @@ fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name
 }
 
 @Composable
-fun TopRow(title: String, onBack: (() -> Unit)?, actions: @Composable RowScope.() -> Unit = {}) {
+fun TopRow(title: String, onBack: (() -> Unit)?, icon: ImageVector = Icons.AutoMirrored.Rounded.ArrowBack, actions: @Composable RowScope.() -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (onBack != null) IconButton(onBack) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") } else Spacer(Modifier.width(12.dp))
+        if (onBack != null) IconButton(onBack) { Icon(icon, "Back") } else Spacer(Modifier.width(12.dp))
         Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         actions()
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit) {
+fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     var sel by remember(dir) { mutableStateOf(setOf<File>()) }
     var ask by remember { mutableStateOf<String?>(null) }
-    val list = remember(dir, rev) { (dir.listFiles()?.toList() ?: emptyList()).sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() })) }
+    var q by remember(dir) { mutableStateOf("") }
+    var sheet by remember { mutableStateOf<File?>(null) }
+    var confirm by remember { mutableStateOf<List<File>?>(null) }
+    var info by remember { mutableStateOf<File?>(null) }
+    val list = remember(dir, rev, q, S.hidden, S.sort, S.foldersFirst) { listDir(dir, q) }
+    fun del(l: List<File>) { doDelete(ctx, l); sel = emptySet(); bump() }
+    fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
+    fun paste() {
+        val src = Clip.files; val cut = Clip.cut
+        scope.launch { withContext(Dispatchers.IO) { pasteInto(dir, src, cut) }; if (cut) Clip.files = emptyList(); bump() }
+    }
     Column(Modifier.fillMaxSize()) {
         if (sel.isNotEmpty()) {
-            TopRow("${sel.size} selected", { sel = emptySet() }) {
+            TopRow("${sel.size} selected", { sel = emptySet() }, Icons.Rounded.Close) {
+                IconButton({ Clip.set(sel.toList(), true); sel = emptySet() }) { Icon(Icons.Rounded.ContentCut, "Cut") }
+                IconButton({ Clip.set(sel.toList(), false); sel = emptySet() }) { Icon(Icons.Rounded.ContentCopy, "Copy") }
                 if (sel.size == 1) IconButton({ ask = "rename" }) { Icon(Icons.Rounded.Edit, "Rename") }
-                IconButton({ sel.forEach { toBin(ctx, it) }; sel = emptySet(); bump() }) { Icon(Icons.Rounded.Delete, "Move to bin") }
+                IconButton({ askDel(sel.toList()) }) { Icon(Icons.Rounded.Delete, "Delete") }
             }
         } else {
-            TopRow(if (canUp) dir.name else "Internal storage", if (canUp) onUp else null) {
+            TopRow(if (dir == ROOT) "Internal storage" else dir.name.ifEmpty { "/" }, if (canUp) onUp else onMenu,
+                if (canUp) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu) {
+                if (Clip.files.isNotEmpty()) IconButton({ paste() }) { Icon(Icons.Rounded.ContentPaste, "Paste") }
                 IconButton({ ask = "new" }) { Icon(Icons.Rounded.CreateNewFolder, "New folder") }
             }
         }
-        if (list.isEmpty()) Text("This folder is empty", modifier = Modifier.padding(24.dp).alpha(.6f))
+        SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
+        if (list.isEmpty()) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f))
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
             items(list, key = { it.path }) { f ->
                 FileRow(f, f in sel, {
                     if (sel.isNotEmpty()) sel = if (f in sel) sel - f else sel + f
                     else if (f.isDirectory) onEnter(f) else open(ctx, f)
-                }, { sel = sel + f })
+                }, { if (sel.isNotEmpty()) sel = sel + f else sheet = f })
             }
         }
+    }
+    sheet?.let { f ->
+        ModalBottomSheet(onDismissRequest = { sheet = null }) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(f.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val acts = buildList {
+                    add(Act("Open", Icons.Rounded.Description) { if (f.isDirectory) onEnter(f) else open(ctx, f) })
+                    if (f.isFile) {
+                        add(Act("Open with…", Icons.Rounded.Apps) { openWith(ctx, f) })
+                        add(Act("Share", Icons.Rounded.Share) { share(ctx, f) })
+                    }
+                    add(Act("Cut (move)", Icons.Rounded.ContentCut) { Clip.set(listOf(f), true) })
+                    add(Act("Copy", Icons.Rounded.ContentCopy) { Clip.set(listOf(f), false) })
+                    add(Act("Rename", Icons.Rounded.Edit) { sel = setOf(f); ask = "rename" })
+                    add(Act("Delete", Icons.Rounded.Delete) { askDel(listOf(f)) })
+                    add(Act("Select", Icons.Rounded.CheckCircle) { sel = setOf(f) })
+                    add(Act("Details", Icons.Rounded.Info) { info = f })
+                }
+                acts.forEach { a ->
+                    ListItem(headlineContent = { Text(a.label) }, leadingContent = { Icon(a.icon, null) }, modifier = Modifier.clickable { sheet = null; a.run() })
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+    confirm?.let { l ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text(if (S.useBin) "Move to bin?" else "Delete permanently?") },
+            text = { Text(if (l.size == 1) l[0].name else "${l.size} items") },
+            confirmButton = { TextButton({ confirm = null; del(l) }) { Text("Delete") } },
+            dismissButton = { TextButton({ confirm = null }) { Text("Cancel") } }
+        )
+    }
+    info?.let { f ->
+        AlertDialog(
+            onDismissRequest = { info = null },
+            title = { Text(f.name) },
+            text = { Text("${f.path}\n\n${sub(f)}\nModified ${java.util.Date(f.lastModified())}") },
+            confirmButton = { TextButton({ info = null }) { Text("Close") } }
+        )
     }
     ask?.let { mode ->
         var t by remember { mutableStateOf(if (mode == "rename") sel.first().name else "") }
