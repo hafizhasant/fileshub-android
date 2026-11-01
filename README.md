@@ -8,6 +8,7 @@ A Material 3 file manager for Android, built with Kotlin and Jetpack Compose. No
 - Browse folders, create, rename, multi-select, open files
 - Long-press actions (open with, share, cut, copy, paste, rename, delete), search, recycle bin with restore
 - FTP and SMB browsing
+- Frosted-glass dark UI, three home layouts, list/grid/gallery/compact views with sort modes, ZIP compress and zip/tar/7z extract
 - Dark and light themes
 
 Needs Android 11 or newer and "All files access".

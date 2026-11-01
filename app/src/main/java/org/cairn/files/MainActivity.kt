@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.StatFs
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -66,7 +68,7 @@ enum class Cat(val label: String, val icon: ImageVector, val color: Color, val e
     }
 }
 
-class Scan(val counts: Map<Cat, Int>, val recent: List<File>)
+class Scan(val counts: Map<Cat, Int>, val sizes: Map<Cat, Long>, val recent: List<File>)
 
 fun walk() = ROOT.walkTopDown()
     .onEnter { it != BIN && !(it.parentFile == ROOT && it.name == "Android") }
@@ -74,13 +76,14 @@ fun walk() = ROOT.walkTopDown()
 
 fun doScan(): Scan {
     val counts = Cat.entries.associateWith { 0 }.toMutableMap()
+    val sizes = Cat.entries.associateWith { 0L }.toMutableMap()
     val all = ArrayList<File>()
     for (f in walk()) {
         all.add(f)
-        for (c in Cat.entries) if (c.matches(f)) counts[c] = counts.getValue(c) + 1
+        for (c in Cat.entries) if (c.matches(f)) { counts[c] = counts.getValue(c) + 1; sizes[c] = sizes.getValue(c) + f.length() }
     }
     counts[Cat.Bin] = BIN.list()?.count { it != ".nomedia" } ?: 0
-    return Scan(counts, all.sortedByDescending { it.lastModified() }.take(10))
+    return Scan(counts, sizes, all.sortedByDescending { it.lastModified() }.take(10))
 }
 
 fun fmt(b: Long): String = when {
@@ -125,6 +128,18 @@ class MainActivity : ComponentActivity() {
         setContent { App(tick.intValue) }
     }
     override fun onResume() { super.onResume(); tick.intValue++ }
+
+    private var dx = 0f
+    private var dy = 0f
+    private var dt = 0L
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        if (S.haptics) {
+            if (e.actionMasked == MotionEvent.ACTION_DOWN) { dx = e.x; dy = e.y; dt = e.eventTime }
+            else if (e.actionMasked == MotionEvent.ACTION_UP && e.eventTime - dt < 250 && Math.abs(e.x - dx) < 24 && Math.abs(e.y - dy) < 24)
+                window.decorView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        }
+        return super.dispatchTouchEvent(e)
+    }
 }
 
 @Composable
@@ -152,11 +167,12 @@ fun App(tick: Int) {
         primary = Color(0xFF3B9BE8), background = Color(0xFF111418), surface = Color(0xFF111418), surfaceContainer = Color(0xFF1B2128)
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
+        Box(Modifier.fillMaxSize().background(bgBrush())) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
             Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
+                containerColor = Color.Transparent,
                 bottomBar = {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                    NavigationBar(containerColor = if (S.dark) Color(0xCC0B1424) else Color(0xCCF3F8F7)) {
                         NavigationBarItem(top is Dest.Home, { nav(Dest.Home) }, { Icon(Icons.Rounded.Home, null) }, label = { Text("Home") })
                         NavigationBarItem(top is Dest.Browse, { nav(Dest.Browse(ROOT)) }, { Icon(Icons.Rounded.Folder, null) }, label = { Text("Browse") })
                     }
@@ -164,7 +180,7 @@ fun App(tick: Int) {
             ) { pad ->
                 Box(Modifier.padding(pad).fillMaxSize()) {
                     if (!granted) Perm() else when (val d = top) {
-                        is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }) { go(Dest.Category(it)) }
+                        is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
                         is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } })
                         is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
@@ -175,6 +191,7 @@ fun App(tick: Int) {
                     }
                 }
             }
+        }
         }
     }
 }
@@ -190,65 +207,6 @@ fun Perm() {
         Text("Cairn needs this to browse and manage your storage. Cairn only uses the network when you open an FTP or SMB server that you added yourself.", textAlign = TextAlign.Center, modifier = Modifier.alpha(.7f))
         Spacer(Modifier.height(24.dp))
         Button({ ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))) }) { Text("Open settings") }
-    }
-}
-
-@Composable
-fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onCat: (Cat) -> Unit) {
-    val ctx = LocalContext.current
-    val st = remember { StatFs(ROOT.path) }
-    val total = st.totalBytes; val free = st.availableBytes
-    val pri = MaterialTheme.colorScheme.primary
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("My Files", fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                IconButton(onRefresh) { Icon(Icons.Rounded.Refresh, "Refresh") }
-                IconButton(onMenu) { Icon(Icons.Rounded.Menu, "Menu") }
-            }
-        }
-        item { var q by remember { mutableStateOf("") }; SearchField(q, { q = it }) { onSearch(q) } }
-        item {
-            Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                Column(Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(pri.copy(.18f)), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Folder, null, tint = pri)
-                        }
-                        Spacer(Modifier.width(14.dp))
-                        Column {
-                            Text("Internal Storage", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                            Text(ROOT.path, fontSize = 13.sp, modifier = Modifier.alpha(.65f))
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    LinearProgressIndicator({ (1f - free.toFloat() / total).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(8.dp).clip(CircleShape))
-                    Spacer(Modifier.height(10.dp))
-                    Row {
-                        Text("${fmt(free)} free", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Text("${fmt(total)} total")
-                    }
-                }
-            }
-        }
-        item { Text("Quick Categories", fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
-        items(Cat.entries.chunked(4)) { row ->
-            Row(Modifier.fillMaxWidth()) {
-                row.forEach { c ->
-                    Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { onCat(c) }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Box(Modifier.size(64.dp).clip(CircleShape).background(c.color.copy(.18f)), contentAlignment = Alignment.Center) {
-                            Icon(c.icon, null, tint = c.color)
-                        }
-                        Spacer(Modifier.height(6.dp))
-                        Text(c.label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(scan?.counts?.get(c)?.toString() ?: "…", fontSize = 12.sp, modifier = Modifier.alpha(.6f))
-                    }
-                }
-                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-        item { Text("Recent Files", fontSize = 20.sp, fontWeight = FontWeight.SemiBold) }
-        items(scan?.recent ?: emptyList()) { f -> FileRow(f, false, { open(ctx, f) }, {}) }
     }
 }
 
@@ -279,110 +237,6 @@ fun TopRow(title: String, onBack: (() -> Unit)?, icon: ImageVector = Icons.AutoM
         if (onBack != null) IconButton(onBack) { Icon(icon, "Back") } else Spacer(Modifier.width(12.dp))
         Text(title, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
         actions()
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit) {
-    val ctx = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var sel by remember(dir) { mutableStateOf(setOf<File>()) }
-    var ask by remember { mutableStateOf<String?>(null) }
-    var q by remember(dir) { mutableStateOf("") }
-    var sheet by remember { mutableStateOf<File?>(null) }
-    var confirm by remember { mutableStateOf<List<File>?>(null) }
-    var info by remember { mutableStateOf<File?>(null) }
-    val list = remember(dir, rev, q, S.hidden, S.sort, S.foldersFirst) { listDir(dir, q) }
-    fun del(l: List<File>) { doDelete(ctx, l); sel = emptySet(); bump() }
-    fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
-    fun paste() {
-        val src = Clip.files; val cut = Clip.cut
-        scope.launch { withContext(Dispatchers.IO) { pasteInto(dir, src, cut) }; if (cut) Clip.files = emptyList(); bump() }
-    }
-    Column(Modifier.fillMaxSize()) {
-        if (sel.isNotEmpty()) {
-            TopRow("${sel.size} selected", { sel = emptySet() }, Icons.Rounded.Close) {
-                IconButton({ Clip.set(sel.toList(), true); sel = emptySet() }) { Icon(Icons.Rounded.ContentCut, "Cut") }
-                IconButton({ Clip.set(sel.toList(), false); sel = emptySet() }) { Icon(Icons.Rounded.ContentCopy, "Copy") }
-                if (sel.size == 1) IconButton({ ask = "rename" }) { Icon(Icons.Rounded.Edit, "Rename") }
-                IconButton({ askDel(sel.toList()) }) { Icon(Icons.Rounded.Delete, "Delete") }
-            }
-        } else {
-            TopRow(if (dir == ROOT) "Internal storage" else dir.name.ifEmpty { "/" }, if (canUp) onUp else onMenu,
-                if (canUp) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu) {
-                if (Clip.files.isNotEmpty()) IconButton({ paste() }) { Icon(Icons.Rounded.ContentPaste, "Paste") }
-                IconButton({ ask = "new" }) { Icon(Icons.Rounded.CreateNewFolder, "New folder") }
-            }
-        }
-        SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
-        if (list.isEmpty()) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f))
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-            items(list, key = { it.path }) { f ->
-                FileRow(f, f in sel, {
-                    if (sel.isNotEmpty()) sel = if (f in sel) sel - f else sel + f
-                    else if (f.isDirectory) onEnter(f) else open(ctx, f)
-                }, { if (sel.isNotEmpty()) sel = sel + f else sheet = f })
-            }
-        }
-    }
-    sheet?.let { f ->
-        ModalBottomSheet(onDismissRequest = { sheet = null }) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(f.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                val acts = buildList {
-                    add(Act("Open", Icons.Rounded.Description) { if (f.isDirectory) onEnter(f) else open(ctx, f) })
-                    if (f.isFile) {
-                        add(Act("Open with…", Icons.Rounded.Apps) { openWith(ctx, f) })
-                        add(Act("Share", Icons.Rounded.Share) { share(ctx, f) })
-                    }
-                    add(Act("Cut (move)", Icons.Rounded.ContentCut) { Clip.set(listOf(f), true) })
-                    add(Act("Copy", Icons.Rounded.ContentCopy) { Clip.set(listOf(f), false) })
-                    add(Act("Rename", Icons.Rounded.Edit) { sel = setOf(f); ask = "rename" })
-                    add(Act("Delete", Icons.Rounded.Delete) { askDel(listOf(f)) })
-                    add(Act("Select", Icons.Rounded.CheckCircle) { sel = setOf(f) })
-                    add(Act("Details", Icons.Rounded.Info) { info = f })
-                }
-                acts.forEach { a ->
-                    ListItem(headlineContent = { Text(a.label) }, leadingContent = { Icon(a.icon, null) }, modifier = Modifier.clickable { sheet = null; a.run() })
-                }
-                Spacer(Modifier.height(24.dp))
-            }
-        }
-    }
-    confirm?.let { l ->
-        AlertDialog(
-            onDismissRequest = { confirm = null },
-            title = { Text(if (S.useBin) "Move to bin?" else "Delete permanently?") },
-            text = { Text(if (l.size == 1) l[0].name else "${l.size} items") },
-            confirmButton = { TextButton({ confirm = null; del(l) }) { Text("Delete") } },
-            dismissButton = { TextButton({ confirm = null }) { Text("Cancel") } }
-        )
-    }
-    info?.let { f ->
-        AlertDialog(
-            onDismissRequest = { info = null },
-            title = { Text(f.name) },
-            text = { Text("${f.path}\n\n${sub(f)}\nModified ${java.util.Date(f.lastModified())}") },
-            confirmButton = { TextButton({ info = null }) { Text("Close") } }
-        )
-    }
-    ask?.let { mode ->
-        var t by remember { mutableStateOf(if (mode == "rename") sel.first().name else "") }
-        AlertDialog(
-            onDismissRequest = { ask = null },
-            title = { Text(if (mode == "rename") "Rename" else "New folder") },
-            text = { OutlinedTextField(t, { t = it }, singleLine = true) },
-            confirmButton = {
-                TextButton({
-                    if (t.isNotBlank()) {
-                        if (mode == "rename") sel.first().renameTo(File(dir, t)) else File(dir, t).mkdirs()
-                        sel = emptySet(); ask = null; bump()
-                    }
-                }) { Text("OK") }
-            },
-            dismissButton = { TextButton({ ask = null }) { Text("Cancel") } }
-        )
     }
 }
 

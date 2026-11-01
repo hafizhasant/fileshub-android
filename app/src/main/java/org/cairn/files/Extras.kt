@@ -22,7 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.shape.CircleShape as Circle
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -49,7 +51,7 @@ sealed interface Dest {
 }
 
 object S {
-    private var p: SharedPreferences? = null
+    var p: SharedPreferences? = null
     var dark by mutableStateOf(true)
     var hidden by mutableStateOf(false)
     var foldersFirst by mutableStateOf(true)
@@ -57,15 +59,29 @@ object S {
     var startBrowse by mutableStateOf(false)
     var confirmDel by mutableStateOf(true)
     var useBin by mutableStateOf(true)
+    var haptics by mutableStateOf(true)
+    var glass by mutableStateOf(true)
+    var homeStyle by mutableStateOf(0)
+    var view by mutableStateOf("list")
+    var asc by mutableStateOf(true)
+    var zoom by mutableStateOf(0.5f)
+    var sections by mutableStateOf(true)
+    var catsOpen by mutableStateOf(true)
+    var recentOpen by mutableStateOf(true)
     fun load(c: Context) {
         val s = c.getSharedPreferences("cairn", 0); p = s
         dark = s.getBoolean("dark", true); hidden = s.getBoolean("hidden", false); foldersFirst = s.getBoolean("ff", true)
         sort = s.getString("sort", "name") ?: "name"; startBrowse = s.getBoolean("sb", false)
         confirmDel = s.getBoolean("cd", true); useBin = s.getBoolean("ub", true)
+        haptics = s.getBoolean("hp", true); glass = s.getBoolean("gl", true); homeStyle = s.getInt("hs", 0)
+        view = s.getString("vw", "list") ?: "list"; asc = s.getBoolean("asc", true); zoom = s.getFloat("zm", 0.5f)
+        sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true)
     }
     fun save() {
         p?.edit()?.putBoolean("dark", dark)?.putBoolean("hidden", hidden)?.putBoolean("ff", foldersFirst)?.putString("sort", sort)
-            ?.putBoolean("sb", startBrowse)?.putBoolean("cd", confirmDel)?.putBoolean("ub", useBin)?.apply()
+            ?.putBoolean("sb", startBrowse)?.putBoolean("cd", confirmDel)?.putBoolean("ub", useBin)
+            ?.putBoolean("hp", haptics)?.putBoolean("gl", glass)?.putInt("hs", homeStyle)?.putString("vw", view)
+            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.apply()
     }
 }
 
@@ -103,25 +119,19 @@ fun pasteInto(dir: File, src: List<File>, cut: Boolean) {
     }
 }
 
-fun listDir(dir: File, q: String): List<File> {
-    val cmp: Comparator<File> = when (S.sort) {
-        "date" -> compareByDescending<File> { it.lastModified() }
-        "size" -> compareByDescending<File> { it.length() }
-        else -> compareBy<File> { it.name.lowercase() }
-    }
-    val l = (dir.listFiles()?.toList() ?: emptyList()).filter { (S.hidden || !it.name.startsWith(".")) && it.name.contains(q, true) }
-    return if (S.foldersFirst) l.sortedWith(compareBy<File> { !it.isDirectory }.then(cmp)) else l.sortedWith(cmp)
-}
-
 @Composable
 fun SearchField(value: String, onChange: (String) -> Unit, mod: Modifier = Modifier, onSubmit: () -> Unit = {}) {
     OutlinedTextField(
-        value, onChange, mod.fillMaxWidth(), singleLine = true, shape = CircleShape,
+        value, onChange, mod.fillMaxWidth().glass(shape = Circle), singleLine = true, shape = Circle,
         placeholder = { Text("Search files") },
         leadingIcon = { Icon(Icons.Rounded.Search, null) },
         trailingIcon = { if (value.isNotEmpty()) IconButton({ onChange("") }) { Icon(Icons.Rounded.Close, "Clear") } },
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSubmit() })
+        keyboardActions = KeyboardActions(onSearch = { onSubmit() }),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+            unfocusedBorderColor = Color.Transparent, focusedBorderColor = MaterialTheme.colorScheme.primary.copy(.6f)
+        )
     )
 }
 
@@ -156,14 +166,18 @@ class Sec(val title: String, val sub: String, val icon: ImageVector, val opts: L
 fun sw(t: String, g: () -> Boolean, s: (Boolean) -> Unit) = Opt(t, { g().toString() }, { s(!g()); S.save() }, true)
 
 fun sections() = listOf(
-    Sec("General & Behavior", "Start screen and navigation", Icons.Rounded.Settings, listOf(
-        sw("Open Browse on start", { S.startBrowse }, { S.startBrowse = it }))),
-    Sec("Appearance & Themes", "Dark and light themes", Icons.Rounded.Palette, listOf(
-        sw("Dark theme", { S.dark }, { S.dark = it }))),
+    Sec("General & Behavior", "Start screen and feedback", Icons.Rounded.Settings, listOf(
+        sw("Open Browse on start", { S.startBrowse }, { S.startBrowse = it }),
+        sw("Vibrate on tap", { S.haptics }, { S.haptics = it }))),
+    Sec("Appearance & Themes", "Theme, home style and glass", Icons.Rounded.Palette, listOf(
+        sw("Dark theme", { S.dark }, { S.dark = it }),
+        sw("Frosted glass", { S.glass }, { S.glass = it }),
+        Opt("Home style", { listOf("Minimal dark", "Enhanced detail", "List focus")[S.homeStyle] }, { S.homeStyle = (S.homeStyle + 1) % 3; S.save() }))),
     Sec("File Explorer Options", "Hidden files and browsing", Icons.Rounded.FolderOpen, listOf(
         sw("Show hidden files", { S.hidden }, { S.hidden = it }))),
-    Sec("List & Layout Styling", "Sorting and folder order", Icons.Rounded.TextFields, listOf(
-        Opt("Sort by", { S.sort }, { S.sort = when (S.sort) { "name" -> "date"; "date" -> "size"; else -> "name" }; S.save() }),
+    Sec("List & Layout Styling", "Default view and sorting", Icons.Rounded.TextFields, listOf(
+        Opt("Default view", { S.view }, { S.view = when (S.view) { "list" -> "grid"; "grid" -> "gallery"; "gallery" -> "compact"; else -> "list" }; S.save() }),
+        Opt("Default sort", { S.sort }, { S.sort = when (S.sort) { "name" -> "date"; "date" -> "size"; "size" -> "type"; else -> "name" }; S.asc = S.sort == "name" || S.sort == "type"; S.save() }),
         sw("Folders first", { S.foldersFirst }, { S.foldersFirst = it }))),
     Sec("Media Preferences", "Album view and thumbnails", Icons.Rounded.PermMedia, emptyList()),
     Sec("File Actions & Viewers", "Confirmations when changing files", Icons.Rounded.Tune, listOf(
@@ -182,9 +196,8 @@ fun SettingsScreen(page: Int, onPage: (Int) -> Unit, onBack: () -> Unit) {
                 items(secs.size) { i ->
                     val s = secs[i]
                     Card(
-                        Modifier.fillMaxWidth().clickable { onPage(i) }, RoundedCornerShape(24.dp),
-                        CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        Modifier.fillMaxWidth().glass(24.dp).clickable { onPage(i) }, RoundedCornerShape(24.dp),
+                        CardDefaults.cardColors(containerColor = Color.Transparent)
                     ) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.primary.copy(.14f)), contentAlignment = Alignment.Center) {
@@ -222,7 +235,7 @@ fun DrawerItem(label: String, icon: ImageVector, selected: Boolean, onClick: () 
 @Composable
 fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
     val pri = MaterialTheme.colorScheme.primary
-    ModalDrawerSheet {
+    ModalDrawerSheet(drawerContainerColor = if (S.dark) Color(0xF2101A2B) else Color(0xF2F3F8F7)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
             Surface(shape = RoundedCornerShape(28.dp), color = pri.copy(.15f), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -254,7 +267,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("Cairn v0.2.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("Cairn v0.3.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
