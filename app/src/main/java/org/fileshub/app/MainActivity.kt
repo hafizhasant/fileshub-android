@@ -93,15 +93,17 @@ fun fmt(b: Long): String = when {
     else -> "$b B"
 }
 
-fun sizeText(f: File) = if (f.isDirectory) "${f.list()?.size ?: 0} items" else fmt(f.length())
+fun sizeText(f: File) = if (f.isDirectory) (if (f is RootFile) "Folder" else "${f.list()?.size ?: 0} items") else fmt(f.length())
 fun dateText(f: File): String = java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(Date(f.lastModified()))
 fun sub(f: File) = sizeText(f) + " · " + dateText(f)
 
 fun open(ctx: Context, f: File) {
-    val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
-    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
-    val i = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    try { ctx.startActivity(i) } catch (e: Exception) {
+    if (f.isFile && f.extension.equals("apk", true)) { Pending.apk = f; return }
+    try {
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
+        val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
+        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+    } catch (e: Exception) {
         Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
     }
 }
@@ -171,16 +173,17 @@ fun App(tick: Int) {
         }
     }
     val scheme = if (S.dark) darkColorScheme(
-        primary = Color(0xFF3B9BE8), onBackground = Color.White, onSurface = Color.White, background = Color(0xFF111418), surface = Color(0xFF111418), surfaceContainer = Color(0xFF1B2128)
+        primary = Color(0xFF3B9BE8), onBackground = Color.White, onSurface = Color.White, background = Color(0xFF000000), surface = Color(0xFF0B0B0D), surfaceContainer = Color(0xFF1A1A1D), secondaryContainer = Color(0xFF2A2A2E), onSecondaryContainer = Color.White
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
+        Pending.apk?.let { InstallDialog(it) { Pending.apk = null } }
         Box(Modifier.fillMaxSize().background(bgBrush())) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
             Scaffold(
                 containerColor = Color.Transparent,
                 bottomBar = {
-                    NavigationBar(containerColor = if (S.dark) Color(0xCC0B1424) else Color(0xCCF3F8F7)) {
+                    NavigationBar(containerColor = if (S.dark) Color(0xCC0A0A0C) else Color(0xCCF3F8F7)) {
                         NavigationBarItem(top is Dest.Home, { nav(Dest.Home) }, { Icon(Icons.Rounded.Home, null) }, label = { Text("Home") })
                         NavigationBarItem(top is Dest.Browse, { nav(Dest.Browse(ROOT)) }, { Icon(Icons.Rounded.Folder, null) }, label = { Text("Browse") })
                     }
@@ -223,20 +226,20 @@ fun Perm() {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name: String = f.name) {
-    val cat = if (f.isDirectory) null else Cat.entries.firstOrNull { it.exts.isNotEmpty() && it.matches(f) }
-    val color = if (f.isDirectory) MaterialTheme.colorScheme.primary else cat?.color ?: MaterialTheme.colorScheme.onSurfaceVariant
-    val icon = if (f.isDirectory) Icons.Rounded.Folder else cat?.icon ?: Icons.Rounded.Description
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(if (sel) MaterialTheme.colorScheme.primary.copy(.22f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLong).padding(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(44.dp).clip(CircleShape).background(color.copy(.18f)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color) }
+        FileIcon(f, 44.dp)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
-            Text(sub(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f))
+            Row(Modifier.fillMaxWidth()) {
+                Text(sizeText(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f).weight(1f))
+                Text(dateText(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f))
+            }
         }
     }
 }
