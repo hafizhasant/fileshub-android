@@ -4,14 +4,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
-    namespace = "org.cairn.files"
+    namespace = "org.fileshub.app"
     compileSdk = 35
     defaultConfig {
-        applicationId = "org.cairn.files"
+        applicationId = "org.fileshub.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.3.1"
     }
     buildFeatures { compose = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }

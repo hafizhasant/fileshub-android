@@ -1,6 +1,6 @@
-<p align="center"><img src="logo.svg" width="96" alt="Cairn logo"></p>
+<p align="center"><img src="logo.svg" width="96" alt="FilesHub logo"></p>
 
-# Cairn
+# FilesHub
 
 A Material 3 file manager for Android, built with Kotlin and Jetpack Compose. No ads, no trackers, no analytics. The network is used only for FTP and SMB servers you add yourself.
 
