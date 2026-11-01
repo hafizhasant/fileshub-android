@@ -48,6 +48,7 @@ sealed interface Dest {
     object Remotes : Dest
     class Net(val s: Server) : Dest
     class Settings(val page: Int) : Dest
+    class Archive(val f: File) : Dest
 }
 
 object S {
@@ -55,21 +56,22 @@ object S {
     var dark by mutableStateOf(true)
     var hidden by mutableStateOf(false)
     var foldersFirst by mutableStateOf(true)
-    var sort by mutableStateOf("name")
+    var sort by mutableStateOf("date")
     var startBrowse by mutableStateOf(false)
     var confirmDel by mutableStateOf(true)
     var useBin by mutableStateOf(true)
     var haptics by mutableStateOf(true)
     var glass by mutableStateOf(true)
     var homeStyle by mutableStateOf(0)
-    var view by mutableStateOf("list")
-    var asc by mutableStateOf(true)
+    var view by mutableStateOf("compact")
+    var asc by mutableStateOf(false)
     var zoom by mutableStateOf(0.5f)
     var sections by mutableStateOf(true)
     var catsOpen by mutableStateOf(true)
     var recentOpen by mutableStateOf(true)
     fun load(c: Context) {
         val s = c.getSharedPreferences("fileshub", 0); p = s
+        if (!s.getBoolean("d4", false)) s.edit().putString("vw", "compact").putString("sort", "date").putBoolean("asc", false).putBoolean("d4", true).apply()
         dark = s.getBoolean("dark", true); hidden = s.getBoolean("hidden", false); foldersFirst = s.getBoolean("ff", true)
         sort = s.getString("sort", "name") ?: "name"; startBrowse = s.getBoolean("sb", false)
         confirmDel = s.getBoolean("cd", true); useBin = s.getBoolean("ub", true)
@@ -267,7 +269,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.3.1", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.3.2", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }

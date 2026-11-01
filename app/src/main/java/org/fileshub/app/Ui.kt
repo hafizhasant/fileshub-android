@@ -1,6 +1,7 @@
 package org.fileshub.app
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
 import android.graphics.BitmapFactory
 import android.os.StatFs
 import android.text.format.DateUtils
@@ -194,22 +195,151 @@ fun SecHeader(t: String) = Text(t, Modifier.padding(horizontal = 8.dp, vertical 
 fun BrowseRow(f: File, sel: Boolean, m: VM, onClick: () -> Unit, onLong: () -> Unit) {
     val (icon, color) = look(f)
     val compact = m.view == "compact"
-    val s = if (compact) 30.dp else (36 + 26 * m.zoom).dp
+    val s = if (compact) 34.dp else (38 + 24 * m.zoom).dp
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(if (sel) MaterialTheme.colorScheme.primary.copy(.25f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLong)
-            .padding(horizontal = 8.dp, vertical = if (compact) 4.dp else 8.dp),
+            .padding(horizontal = 8.dp, vertical = if (compact) 5.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(Modifier.size(s).clip(CircleShape).background(color.copy(.18f)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color, modifier = Modifier.size(s * .55f)) }
         Spacer(Modifier.width(12.dp))
-        if (compact) {
-            Text(f.name, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (f.isFile) Text(fmt(f.length()), fontSize = 12.sp, modifier = Modifier.alpha(.6f))
-        } else Column(Modifier.weight(1f)) {
-            Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = (14 + 3 * m.zoom).sp)
-            Text(sub(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f))
+        Column(Modifier.weight(1f)) {
+            Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = if (compact) 15.sp else (14 + 3 * m.zoom).sp)
+            Row(Modifier.fillMaxWidth()) {
+                Text(sizeText(f), fontSize = 11.sp, modifier = Modifier.alpha(.6f).weight(1f))
+                Text(dateText(f), fontSize = 11.sp, modifier = Modifier.alpha(.6f))
+            }
+        }
+    }
+}
+
+@Composable
+fun PathBar(dir: File, onJump: (File) -> Unit) {
+    val parts = remember(dir) { generateSequence(dir) { it.parentFile }.toList().reversed() }
+    val scroll = rememberScrollState()
+    LaunchedEffect(dir, scroll.maxValue) { scroll.scrollTo(scroll.maxValue) }
+    Row(Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        parts.forEach { p ->
+            Text(
+                if (p.parent == null) "/" else p.name,
+                Modifier.clip(RoundedCornerShape(8.dp)).clickable { onJump(p) }.padding(horizontal = 6.dp, vertical = 6.dp),
+                fontSize = 13.sp, color = if (p == dir) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.primary,
+                fontWeight = if (p == dir) FontWeight.SemiBold else FontWeight.Normal
+            )
+            if (p != dir && p.parent != null) Text("›", fontSize = 13.sp, modifier = Modifier.alpha(.5f))
+        }
+    }
+}
+
+// ---------- browse inside archives ----------
+class AEntry(val name: String, val dir: Boolean, val size: Long, val time: Long)
+
+fun tarStream(f: File): TarArchiveInputStream {
+    val raw = f.inputStream().buffered()
+    return TarArchiveInputStream(if (archExt(f) == ".tar") raw else GzipCompressorInputStream(raw))
+}
+
+fun listArchive(f: File): List<AEntry> {
+    val out = ArrayList<AEntry>()
+    when (archExt(f)) {
+        ".zip" -> java.util.zip.ZipFile(f).use { z -> z.entries().asSequence().forEach { out.add(AEntry(it.name.trimEnd('/'), it.isDirectory, it.size, it.time)) } }
+        ".tar", ".tgz", ".tar.gz" -> tarStream(f).use { t ->
+            generateSequence { t.nextEntry }.forEach { out.add(AEntry(it.name.trimEnd('/'), it.isDirectory, it.size, runCatching { it.lastModifiedDate.time }.getOrDefault(0L))) }
+        }
+        ".7z" -> SevenZFile.builder().setFile(f).get().use { s ->
+            generateSequence { s.nextEntry }.forEach { out.add(AEntry(it.name.trimEnd('/'), it.isDirectory, it.size, runCatching { it.lastModifiedDate.time }.getOrDefault(0L))) }
+        }
+        else -> error("Unsupported archive")
+    }
+    return out
+}
+
+fun extractEntry(f: File, name: String, out: File) {
+    out.parentFile?.mkdirs()
+    when (archExt(f)) {
+        ".zip" -> java.util.zip.ZipFile(f).use { z ->
+            val e = z.getEntry(name) ?: error("Not found in archive")
+            z.getInputStream(e).use { i -> out.outputStream().use { i.copyTo(it) } }
+        }
+        ".tar", ".tgz", ".tar.gz" -> tarStream(f).use { t ->
+            while (true) { val e = t.nextEntry ?: break; if (e.name.trimEnd('/') == name) { out.outputStream().use { t.copyTo(it) }; break } }
+        }
+        ".7z" -> SevenZFile.builder().setFile(f).get().use { s ->
+            while (true) {
+                val e = s.nextEntry ?: break
+                if (e.name.trimEnd('/') == name) {
+                    out.outputStream().use { o -> val b = ByteArray(8192); while (true) { val r = s.read(b); if (r < 0) break; o.write(b, 0, r) } }
+                    break
+                }
+            }
+        }
+        else -> error("Unsupported archive")
+    }
+}
+
+@Composable
+fun ArchiveScreen(f: File, onBack: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var path by remember { mutableStateOf("") }
+    val res by produceState<Result<List<AEntry>>?>(null, f) { value = withContext(Dispatchers.IO) { runCatching { listArchive(f) } } }
+    BackHandler(enabled = path.isNotEmpty()) { path = path.substringBeforeLast('/', "") }
+    val r = res
+    val pri = MaterialTheme.colorScheme.primary
+    Column(Modifier.fillMaxSize()) {
+        TopRow(if (path.isEmpty()) f.name else path.substringAfterLast('/'), { if (path.isEmpty()) onBack() else path = path.substringBeforeLast('/', "") }) {
+            IconButton({
+                val d = uniq(File(f.parentFile, f.name.dropLast((archExt(f) ?: "").length)))
+                toast(ctx, "Extracting…")
+                scope.launch {
+                    val x = withContext(Dispatchers.IO) { runCatching { extract(f, d) } }
+                    toast(ctx, if (x.isSuccess) "Extracted to ${d.name}" else x.exceptionOrNull()?.message ?: "Extract failed")
+                }
+            }) { Icon(Icons.Rounded.Unarchive, "Extract all") }
+        }
+        Text(f.path + if (path.isEmpty()) "" else "  ›  $path", fontSize = 12.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).alpha(.6f))
+        if (r == null) Text("Reading archive…", Modifier.padding(24.dp).alpha(.6f))
+        else if (r.isFailure) Text("Couldn't read archive: ${r.exceptionOrNull()?.message ?: "unknown error"}", Modifier.padding(24.dp))
+        else {
+            val prefix = if (path.isEmpty()) "" else "$path/"
+            val kids = LinkedHashMap<String, AEntry>()
+            r.getOrThrow().forEach { e ->
+                if (e.name.startsWith(prefix) && e.name.length > prefix.length) {
+                    val rest = e.name.substring(prefix.length)
+                    val first = rest.substringBefore('/')
+                    val isDir = e.dir || rest.contains('/')
+                    if (first !in kids) kids[first] = if (isDir) AEntry(prefix + first, true, 0, e.time) else e
+                }
+            }
+            val list = kids.values.sortedWith(compareBy({ !it.dir }, { it.name.lowercase() }))
+            if (list.isEmpty()) Text("Empty", Modifier.padding(24.dp).alpha(.6f))
+            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                items(list) { e ->
+                    val cat = if (e.dir) null else Cat.entries.firstOrNull { it.exts.isNotEmpty() && e.name.substringAfterLast('.', "").lowercase() in it.exts }
+                    val color = if (e.dir) pri else cat?.color ?: MaterialTheme.colorScheme.onSurfaceVariant
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {
+                        if (e.dir) path = e.name else scope.launch {
+                            val out = File(ctx.cacheDir, "arc/${f.name.hashCode()}/${e.name.substringAfterLast('/')}")
+                            val x = withContext(Dispatchers.IO) { runCatching { extractEntry(f, e.name, out) } }
+                            if (x.isSuccess) open(ctx, out) else toast(ctx, x.exceptionOrNull()?.message ?: "Couldn't open")
+                        }
+                    }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(38.dp).clip(CircleShape).background(color.copy(.18f)), contentAlignment = Alignment.Center) {
+                            Icon(if (e.dir) Icons.Rounded.Folder else cat?.icon ?: Icons.Rounded.Description, null, tint = color)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(e.name.substringAfterLast('/'), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+                            Row(Modifier.fillMaxWidth()) {
+                                Text(if (e.dir) "Folder" else fmt(e.size), fontSize = 11.sp, modifier = Modifier.alpha(.6f).weight(1f))
+                                if (e.time > 0) Text(SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()).format(Date(e.time)), fontSize = 11.sp, modifier = Modifier.alpha(.6f))
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -275,7 +405,7 @@ fun ViewPanel(m: VM, only: Boolean, setM: (VM, Boolean) -> Unit, onFinish: () ->
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit) {
+fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit, onArchive: (File) -> Unit, onJump: (File) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var sel by remember(dir) { mutableStateOf(setOf<File>()) }
@@ -296,7 +426,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         } else list
     }
     fun setM(n: VM, save: Boolean) { m = n; if (save) saveVm(dir, n, only) }
-    fun tap(f: File) { if (sel.isNotEmpty()) sel = if (f in sel) sel - f else sel + f else if (f.isDirectory) onEnter(f) else open(ctx, f) }
+    fun tap(f: File) { if (sel.isNotEmpty()) sel = if (f in sel) sel - f else sel + f else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
     fun hold(f: File) { if (sel.isNotEmpty()) sel = sel + f else sheet = f }
     fun del(l: List<File>) { doDelete(ctx, l); sel = emptySet(); bump() }
     fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
@@ -352,6 +482,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             }
         }
         SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
+        PathBar(dir, onJump)
         if (list.isEmpty()) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f))
         if (m.view == "grid" || m.view == "gallery") {
             val min = if (m.view == "gallery") 110 + 90 * m.zoom else 80 + 70 * m.zoom
@@ -375,7 +506,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(f.name, Modifier.padding(horizontal = 24.dp, vertical = 8.dp), fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val acts = buildList {
-                    add(Act("Open", Icons.Rounded.Description) { if (f.isDirectory) onEnter(f) else open(ctx, f) })
+                    add(Act("Open", Icons.Rounded.Description) { if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) })
                     if (f.isFile) {
                         add(Act("Open with…", Icons.Rounded.Apps) { openWith(ctx, f) })
                         add(Act("Share", Icons.Rounded.Share) { share(ctx, f) })
