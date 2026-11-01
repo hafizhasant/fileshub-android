@@ -93,9 +93,9 @@ fun fmt(b: Long): String = when {
     else -> "$b B"
 }
 
-fun sub(f: File): String =
-    if (f.isDirectory) "${f.list()?.size ?: 0} items"
-    else fmt(f.length()) + " · " + DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(f.lastModified()))
+fun sizeText(f: File) = if (f.isDirectory) "${f.list()?.size ?: 0} items" else fmt(f.length())
+fun dateText(f: File): String = java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(Date(f.lastModified()))
+fun sub(f: File) = sizeText(f) + " · " + dateText(f)
 
 fun open(ctx: Context, f: File) {
     val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
@@ -164,11 +164,18 @@ fun App(tick: Int) {
     BackHandler(enabled = stack.size > 1) { back() }
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
+    (ctx as? android.app.Activity)?.window?.let { w ->
+        SideEffect {
+            val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
+            c.isAppearanceLightStatusBars = !S.dark; c.isAppearanceLightNavigationBars = !S.dark
+        }
+    }
     val scheme = if (S.dark) darkColorScheme(
-        primary = Color(0xFF3B9BE8), background = Color(0xFF111418), surface = Color(0xFF111418), surfaceContainer = Color(0xFF1B2128)
+        primary = Color(0xFF3B9BE8), onBackground = Color.White, onSurface = Color.White, background = Color(0xFF111418), surface = Color(0xFF111418), surfaceContainer = Color(0xFF1B2128)
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
         Box(Modifier.fillMaxSize().background(bgBrush())) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
             Scaffold(
                 containerColor = Color.Transparent,
@@ -183,7 +190,8 @@ fun App(tick: Int) {
                     if (!granted) Perm() else when (val d = top) {
                         is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
-                        is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } })
+                        is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) })
+                        is Dest.Archive -> ArchiveScreen(d.f) { back() }
                         is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
                         is Dest.Search -> SearchScreen(d.q, { back() }) { go(Dest.Browse(it)) }
                         is Dest.Remotes -> ServersScreen({ back() }) { go(Dest.Net(it)) }
@@ -192,6 +200,7 @@ fun App(tick: Int) {
                     }
                 }
             }
+        }
         }
         }
     }
