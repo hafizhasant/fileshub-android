@@ -125,3 +125,10 @@ fun InstallDialog(f: File, onDismiss: () -> Unit) {
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } }
     )
 }
+
+fun shareMany(ctx: Context, l: List<File>) {
+    if (l.isEmpty()) return
+    val uris = ArrayList(l.map { uriOf(ctx, it) })
+    val i = Intent(Intent.ACTION_SEND_MULTIPLE).setType("*/*").putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    ctx.startActivity(Intent.createChooser(i, "Share"))
+}
