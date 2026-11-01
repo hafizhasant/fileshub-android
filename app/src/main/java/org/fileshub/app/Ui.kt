@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -219,7 +220,7 @@ fun SecHeader(t: String) = Text(t, Modifier.padding(horizontal = 8.dp, vertical 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun BrowseRow(f: File, sel: Boolean, m: VM, onClick: () -> Unit, onLong: () -> Unit) {
+fun BrowseRow(f: File, sel: Boolean, m: VM, check: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
     val compact = m.view == "compact"
     val s = if (compact) 34.dp else (38 + 24 * m.zoom).dp
     Row(
@@ -229,6 +230,7 @@ fun BrowseRow(f: File, sel: Boolean, m: VM, onClick: () -> Unit, onLong: () -> U
             .padding(horizontal = 8.dp, vertical = if (compact) 5.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (check) { Checkbox(sel, null); Spacer(Modifier.width(6.dp)) }
         FileIcon(f, s)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -429,19 +431,101 @@ fun ViewPanel(m: VM, only: Boolean, setM: (VM, Boolean) -> Unit, onFinish: () ->
     }
 }
 
+fun folderBadge(f: File): ImageVector? = when (f.name.lowercase()) {
+    "android" -> Icons.Rounded.Settings
+    "dcim", "camera" -> Icons.Rounded.PhotoCamera
+    "download", "downloads" -> Icons.Rounded.Download
+    "documents" -> Icons.Rounded.Description
+    "pictures", "screenshots" -> Icons.Rounded.Image
+    "music" -> Icons.Rounded.MusicNote
+    "movies", "videos" -> Icons.Rounded.Movie
+    "backup", "backups" -> Icons.Rounded.Backup
+    "bluetooth" -> Icons.Rounded.Bluetooth
+    else -> null
+}
+
+@Composable
+fun FolderGlyph(mod: Modifier, badge: ImageVector?) {
+    Box(mod.aspectRatio(1.25f)) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width; val h = size.height
+            val r = CornerRadius(w * .07f)
+            drawRoundRect(Color(0xFF2F8FD6), Offset(0f, h * .1f), Size(w, h * .9f), r)
+            drawRoundRect(Color(0xFF2F8FD6), Offset(0f, 0f), Size(w * .45f, h * .3f), r)
+            drawRoundRect(Brush.verticalGradient(listOf(Color(0xFF63C4F7), Color(0xFF3CA6EA))), Offset(0f, h * .2f), Size(w, h * .8f), r)
+        }
+        if (badge != null) Icon(badge, null, tint = Color.White.copy(.92f), modifier = Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = 8.dp).fillMaxWidth(.28f).aspectRatio(1f))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun GridTile(f: File, sel: Boolean, check: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+    val (icon, color) = look(f)
+    Column(
+        Modifier.clip(RoundedCornerShape(12.dp)).background(if (sel) MaterialTheme.colorScheme.primary.copy(.25f) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLong).padding(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(Modifier.fillMaxWidth()) {
+            if (f.isDirectory) FolderGlyph(Modifier.fillMaxWidth(.9f).align(Alignment.Center), folderBadge(f))
+            else Box(Modifier.fillMaxWidth(.8f).aspectRatio(1.25f).align(Alignment.Center).clip(RoundedCornerShape(10.dp)).background(color.copy(.18f)), contentAlignment = Alignment.Center) {
+                if (hasThumb(f)) Thumb(f, Modifier.fillMaxSize()) { Icon(icon, null, tint = color, modifier = Modifier.fillMaxSize(.55f)) }
+                else Icon(icon, null, tint = color, modifier = Modifier.fillMaxSize(.55f))
+            }
+            if (check) Checkbox(sel, null, Modifier.align(Alignment.TopStart))
+        }
+        Text(f.name, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun GalleryTile(f: File, sel: Boolean, check: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
+    val (icon, color) = look(f)
+    Box(
+        Modifier.clip(RoundedCornerShape(14.dp)).aspectRatio(1f).background(color.copy(.16f))
+            .combinedClickable(onClick = onClick, onLongClick = onLong)
+    ) {
+        if (f.isDirectory) FolderGlyph(Modifier.align(Alignment.Center).fillMaxWidth(.7f), folderBadge(f))
+        else if (hasThumb(f)) Thumb(f, Modifier.fillMaxSize()) { Icon(icon, null, tint = color, modifier = Modifier.align(Alignment.Center).fillMaxSize(.4f)) }
+        else Icon(icon, null, tint = color, modifier = Modifier.align(Alignment.Center).fillMaxSize(.4f))
+        Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(.7f)))).padding(horizontal = 8.dp, vertical = 6.dp)) {
+            Text(f.name, fontSize = 12.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        if (sel) Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.primary.copy(.3f)))
+        if (check) Checkbox(sel, null, Modifier.align(Alignment.TopStart).padding(2.dp))
+    }
+}
+
+@Composable
+fun SelTopBar(count: Int, size: String, onClose: () -> Unit, onAll: () -> Unit, onInvert: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(12.dp).glass(shape = CircleShape).padding(horizontal = 6.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClose) { Icon(Icons.Rounded.Close, "Exit selection") }
+        Column(Modifier.weight(1f)) {
+            Text("$count item${if (count == 1) "" else "s"} selected", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(size, fontSize = 12.sp, modifier = Modifier.alpha(.65f))
+        }
+        IconButton(onAll) { Icon(Icons.Rounded.SelectAll, "Select all") }
+        IconButton(onInvert) { Icon(Icons.Rounded.FlipToBack, "Invert selection") }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit, onArchive: (File) -> Unit, onJump: (File) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var sel by remember(dir) { mutableStateOf(setOf<File>()) }
+    var selMode by remember(dir) { mutableStateOf(false) }
     var ask by remember { mutableStateOf<String?>(null) }
     var q by remember(dir) { mutableStateOf("") }
     var sheet by remember { mutableStateOf<File?>(null) }
     var confirm by remember { mutableStateOf<List<File>?>(null) }
-    var info by remember { mutableStateOf<File?>(null) }
+    var info by remember { mutableStateOf<List<File>?>(null) }
     var vmenu by remember { mutableStateOf(false) }
     var more by remember { mutableStateOf(false) }
+    var bmore by remember { mutableStateOf(false) }
     var m by remember(dir) { mutableStateOf(vmFor(dir)) }
     var only by remember(dir) { mutableStateOf(S.p?.contains("vm:" + dir.path) == true) }
     val local = dir.path.startsWith(ROOT.path) && dir !is RootFile
@@ -455,10 +539,13 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             list.forEach { f -> val s = sectionOf(f, m); if (s != null && s != last) { add(s); last = s }; add(f) }
         } else list
     }
+    val selecting = selMode || sel.isNotEmpty()
     fun setM(n: VM, save: Boolean) { m = n; if (save) saveVm(dir, n, only) }
-    fun tap(f: File) { if (sel.isNotEmpty()) sel = if (f in sel) sel - f else sel + f else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
-    fun hold(f: File) { if (sel.isNotEmpty()) sel = sel + f else sheet = f }
-    fun del(l: List<File>) { doDelete(ctx, l); sel = emptySet(); bump() }
+    fun exit() { sel = emptySet(); selMode = false }
+    fun toggle(f: File) { sel = if (f in sel) sel - f else sel + f }
+    fun tap(f: File) { if (selecting) toggle(f) else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
+    fun hold(f: File) { if (selecting) toggle(f) else sheet = f }
+    fun del(l: List<File>) { doDelete(ctx, l); exit(); bump() }
     fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
     fun paste() {
         val src = Clip.files; val cut = Clip.cut
@@ -470,7 +557,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { zipTo(l, out) } }
             toast(ctx, if (r.isSuccess) "Created ${out.name}" else r.exceptionOrNull()?.message ?: "Compress failed")
-            sel = emptySet(); bump()
+            exit(); bump()
         }
     }
     fun extractIt(f: File) {
@@ -479,55 +566,85 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         scope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { extract(f, d) } }
             toast(ctx, if (r.isSuccess) "Extracted to ${d.name}" else r.exceptionOrNull()?.message ?: "Extract failed")
-            sel = emptySet(); bump()
+            exit(); bump()
         }
     }
-    Column(Modifier.fillMaxSize()) {
-        if (sel.isNotEmpty()) {
-            TopRow("${sel.size} selected", { sel = emptySet() }, Icons.Rounded.Close) {
-                IconButton({ Clip.set(sel.toList(), true); sel = emptySet() }) { Icon(Icons.Rounded.ContentCut, "Cut") }
-                IconButton({ Clip.set(sel.toList(), false); sel = emptySet() }) { Icon(Icons.Rounded.ContentCopy, "Copy") }
-                IconButton({ askDel(sel.toList()) }) { Icon(Icons.Rounded.Delete, "Delete") }
-                Box {
-                    IconButton({ more = true }) { Icon(Icons.Rounded.MoreVert, "More") }
-                    DropdownMenu(more, { more = false }) {
-                        if (sel.size == 1) DropdownMenuItem({ Text("Rename") }, { more = false; ask = "rename" })
-                        DropdownMenuItem({ Text("Compress to ZIP") }, { more = false; compress(sel.toList()) })
-                        if (sel.size == 1 && isArchive(sel.first())) DropdownMenuItem({ Text("Extract") }, { more = false; extractIt(sel.first()) })
-                        DropdownMenuItem({ Text("Select all") }, { more = false; sel = list.toSet() })
+    val bottomPad = if (selecting) 96.dp else 12.dp
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            if (selecting) {
+                SelTopBar(sel.size, fmt(sel.filter { it.isFile }.sumOf { it.length() }), { exit() }, { sel = list.toSet() }, { sel = list.toSet() - sel })
+            } else {
+                TopRow(if (dir == ROOT) "Internal storage" else dir.name.ifEmpty { "/" }, if (canUp) onUp else onMenu,
+                    if (canUp) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu) {
+                    if (Clip.files.isNotEmpty()) IconButton({ paste() }) { Icon(Icons.Rounded.ContentPaste, "Paste") }
+                    Box {
+                        IconButton({ vmenu = true }) { Icon(Icons.Rounded.ViewModule, "View and sort") }
+                        DropdownMenu(vmenu, { vmenu = false }) {
+                            ViewPanel(m, only, ::setM, { saveVm(dir, m, only) }) { only = it; saveVm(dir, m, it) }
+                        }
+                    }
+                    Box {
+                        IconButton({ more = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                        DropdownMenu(more, { more = false }) {
+                            DropdownMenuItem(text = { Text("Select files") }, leadingIcon = { Icon(Icons.Rounded.CheckCircle, null) }, onClick = { more = false; selMode = true })
+                            DropdownMenuItem(text = { Text("Select all") }, leadingIcon = { Icon(Icons.Rounded.SelectAll, null) }, onClick = { more = false; selMode = true; sel = list.toSet() })
+                            DropdownMenuItem(text = { Text("New folder") }, leadingIcon = { Icon(Icons.Rounded.CreateNewFolder, null) }, onClick = { more = false; ask = "new" })
+                            DropdownMenuItem(text = { Text("New file") }, leadingIcon = { Icon(Icons.Rounded.Description, null) }, onClick = { more = false; ask = "newfile" })
+                            if (Clip.files.isNotEmpty()) DropdownMenuItem(text = { Text("Paste here") }, leadingIcon = { Icon(Icons.Rounded.ContentPaste, null) }, onClick = { more = false; paste() })
+                            DropdownMenuItem(text = { Text(if (S.hidden) "Hide hidden files" else "Show hidden files") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { more = false; S.hidden = !S.hidden; S.save() })
+                            DropdownMenuItem(text = { Text("Refresh") }, leadingIcon = { Icon(Icons.Rounded.Refresh, null) }, onClick = { more = false; bump() })
+                        }
                     }
                 }
             }
-        } else {
-            TopRow(if (dir == ROOT) "Internal storage" else dir.name.ifEmpty { "/" }, if (canUp) onUp else onMenu,
-                if (canUp) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu) {
-                if (Clip.files.isNotEmpty()) IconButton({ paste() }) { Icon(Icons.Rounded.ContentPaste, "Paste") }
-                IconButton({ ask = "new" }) { Icon(Icons.Rounded.CreateNewFolder, "New folder") }
-                Box {
-                    IconButton({ vmenu = true }) { Icon(Icons.Rounded.ViewModule, "View and sort") }
-                    DropdownMenu(vmenu, { vmenu = false }) {
-                        ViewPanel(m, only, ::setM, { saveVm(dir, m, only) }) { only = it; saveVm(dir, m, it) }
+            SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
+            PathBar(dir, onJump)
+            if (list.isEmpty()) Text(if (local) "Nothing here" else "Nothing here, or root access is needed. Allow FilesHub in your root manager.", modifier = Modifier.padding(24.dp).alpha(.6f))
+            if (m.view == "grid" || m.view == "gallery") {
+                val gal = m.view == "gallery"
+                val min = if (gal) 140 + 80 * m.zoom else 72 + 36 * m.zoom
+                LazyVerticalGrid(
+                    GridCells.Adaptive(min.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad),
+                    horizontalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp), verticalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp)
+                ) {
+                    rows.forEach { r ->
+                        if (r is String) item(span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
+                        else if (r is File) item {
+                            if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
+                            else GridTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
+                        }
                     }
+                }
+            } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad)) {
+                items(rows) { r ->
+                    if (r is String) SecHeader(r) else if (r is File) BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) })
                 }
             }
         }
-        SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
-        PathBar(dir, onJump)
-        if (list.isEmpty()) Text(if (local) "Nothing here" else "Nothing here, or root access is needed. Allow FilesHub in your root manager.", modifier = Modifier.padding(24.dp).alpha(.6f))
-        if (m.view == "grid" || m.view == "gallery") {
-            val min = if (m.view == "gallery") 110 + 90 * m.zoom else 80 + 70 * m.zoom
-            LazyVerticalGrid(
-                GridCells.Adaptive(min.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)
+        if (selecting) {
+            val one = sel.size == 1
+            val first = sel.firstOrNull()
+            Row(
+                Modifier.align(Alignment.BottomCenter).padding(12.dp).clip(CircleShape)
+                    .background(if (S.dark) Color(0xF01A1A1E) else Color(0xF0EEF3F3)).border(1.dp, Color.White.copy(.14f), CircleShape).padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                rows.forEach { r ->
-                    if (r is String) item(span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
-                    else if (r is File) item { Tile(r, m.view == "gallery", r in sel, { tap(r) }, { hold(r) }) }
+                IconButton({ Clip.set(sel.toList(), true); exit() }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.ContentCut, "Cut") }
+                IconButton({ Clip.set(sel.toList(), false); exit() }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.ContentCopy, "Copy") }
+                IconButton({ askDel(sel.toList()) }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.Delete, "Delete") }
+                IconButton({ if (one && first != null) share(ctx, first) else shareMany(ctx, sel.filter { it.isFile }) }, enabled = sel.any { it.isFile }) { Icon(Icons.Rounded.Share, "Share") }
+                if (one) IconButton({ ask = "rename" }) { Icon(Icons.Rounded.Edit, "Rename") }
+                Box {
+                    IconButton({ bmore = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    DropdownMenu(bmore, { bmore = false }) {
+                        DropdownMenuItem(text = { Text("Archive (ZIP)") }, leadingIcon = { Icon(Icons.Rounded.Archive, null) }, enabled = sel.isNotEmpty(), onClick = { bmore = false; compress(sel.toList()) })
+                        if (one && first != null && isArchive(first)) DropdownMenuItem(text = { Text("Extract") }, leadingIcon = { Icon(Icons.Rounded.Unarchive, null) }, onClick = { bmore = false; extractIt(first) })
+                        if (one && first != null && first.isFile) DropdownMenuItem(text = { Text("Open with…") }, leadingIcon = { Icon(Icons.Rounded.Apps, null) }, onClick = { bmore = false; openWith(ctx, first) })
+                        if (one && first != null && first.isDirectory) DropdownMenuItem(text = { Text("Open directory") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { bmore = false; exit(); onEnter(first) })
+                        DropdownMenuItem(text = { Text("Properties") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, enabled = sel.isNotEmpty(), onClick = { bmore = false; info = sel.toList() })
+                    }
                 }
-            }
-        } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)) {
-            items(rows) { r ->
-                if (r is String) SecHeader(r) else if (r is File) BrowseRow(r, r in sel, m, { tap(r) }, { hold(r) })
             }
         }
     }
@@ -547,8 +664,8 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     if (isArchive(f)) add(Act("Extract", Icons.Rounded.Unarchive) { extractIt(f) })
                     add(Act("Rename", Icons.Rounded.Edit) { sel = setOf(f); ask = "rename" })
                     add(Act("Delete", Icons.Rounded.Delete) { askDel(listOf(f)) })
-                    add(Act("Select", Icons.Rounded.CheckCircle) { sel = setOf(f) })
-                    add(Act("Details", Icons.Rounded.Info) { info = f })
+                    add(Act("Select", Icons.Rounded.CheckCircle) { sel = setOf(f); selMode = true })
+                    add(Act("Details", Icons.Rounded.Info) { info = listOf(f) })
                 }
                 acts.forEach { a ->
                     ListItem(headlineContent = { Text(a.label) }, leadingContent = { Icon(a.icon, null) }, modifier = Modifier.clickable { sheet = null; a.run() })
@@ -566,24 +683,32 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             dismissButton = { TextButton({ confirm = null }) { Text("Cancel") } }
         )
     }
-    info?.let { f ->
+    info?.let { l ->
         AlertDialog(
-            onDismissRequest = { info = null }, title = { Text(f.name) },
-            text = { Text("${f.path}\n\n${sub(f)}\nModified ${Date(f.lastModified())}") },
+            onDismissRequest = { info = null },
+            title = { Text(if (l.size == 1) l[0].name else "${l.size} items") },
+            text = {
+                Text(
+                    if (l.size == 1) "${l[0].path}\n\n${sub(l[0])}"
+                    else "${l.count { it.isDirectory }} folders, ${l.count { it.isFile }} files\nTotal: ${fmt(l.filter { it.isFile }.sumOf { it.length() })}"
+                )
+            },
             confirmButton = { TextButton({ info = null }) { Text("Close") } }
         )
     }
     ask?.let { mode ->
-        var t by remember { mutableStateOf(if (mode == "rename") sel.first().name else "") }
+        var t by remember { mutableStateOf(if (mode == "rename") sel.first().name else if (mode == "newfile") "note.txt" else "") }
         AlertDialog(
             onDismissRequest = { ask = null },
-            title = { Text(if (mode == "rename") "Rename" else "New folder") },
+            title = { Text(when (mode) { "rename" -> "Rename"; "newfile" -> "New file"; else -> "New folder" }) },
             text = { OutlinedTextField(t, { t = it }, singleLine = true) },
             confirmButton = {
                 TextButton({
                     if (t.isNotBlank()) {
-                        if (mode == "rename") sel.first().renameTo(File(dir, t)) else File(dir, t).mkdirs()
-                        sel = emptySet(); ask = null; bump()
+                        if (mode == "rename") sel.first().renameTo(File(dir, t))
+                        else if (mode == "newfile") runCatching { File(dir, t).createNewFile() }
+                        else File(dir, t).mkdirs()
+                        exit(); ask = null; bump()
                     }
                 }) { Text("OK") }
             },
