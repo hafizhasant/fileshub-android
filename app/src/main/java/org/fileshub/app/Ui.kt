@@ -66,7 +66,7 @@ fun Modifier.glass(r: Dp = 24.dp, shape: Shape = RoundedCornerShape(r)): Modifie
     else clip(shape).background(Color.White.copy(.6f)).border(1.dp, Color.White.copy(.9f), shape)
 
 fun bgBrush(): Brush = if (S.dark)
-    Brush.radialGradient(listOf(Color(0xFF17396A), Color(0xFF0C1830), Color(0xFF070D19)), center = Offset(250f, 0f), radius = 2200f)
+    Brush.radialGradient(listOf(Color(0xFF2A2A30), Color(0xFF0B0B0D), Color(0xFF000000)), center = Offset(250f, 0f), radius = 2200f)
 else Brush.verticalGradient(listOf(Color(0xFFDDEFEE), Color(0xFFF3F8F7)))
 
 fun toast(c: Context, s: String) = Toast.makeText(c, s, Toast.LENGTH_SHORT).show()
@@ -94,7 +94,9 @@ fun listDir(dir: File, q: String, m: VM): List<File> {
         else -> compareBy<File> { it.name.lowercase() }
     }
     val cmp = if (m.asc) base else base.reversed()
-    val l = (dir.listFiles()?.toList() ?: emptyList()).filter { (S.hidden || !it.name.startsWith(".")) && it.name.contains(q, true) }
+    var raw: List<File>? = dir.listFiles()?.toList()
+    if (raw.isNullOrEmpty() && !dir.path.startsWith(ROOT.path)) raw = rootList(dir) ?: raw
+    val l = (raw ?: emptyList()).filter { (S.hidden || !it.name.startsWith(".")) && it.name.contains(q, true) }
     return if (S.foldersFirst) l.sortedWith(compareBy<File> { !it.isDirectory }.then(cmp)) else l.sortedWith(cmp)
 }
 
@@ -172,18 +174,43 @@ fun decodeThumb(f: File): ImageBitmap? {
 
 @Composable
 fun Thumb(f: File, mod: Modifier, fallback: @Composable () -> Unit) {
-    val bmp by produceState<ImageBitmap?>(thumbs.get(f.path), f.path) {
-        if (value == null) value = withContext(Dispatchers.IO) { decodeThumb(f)?.also { thumbs.put(f.path, it) } }
+    val ctx = LocalContext.current
+    val key = f.path + f.lastModified()
+    val bmp by produceState<ImageBitmap?>(thumbs.get(key), key) {
+        if (value == null) value = withContext(Dispatchers.IO) { runCatching { makeThumb(ctx, f) }.getOrNull()?.also { thumbs.put(key, it) } }
     }
     val b = bmp
     if (b != null) Image(b, null, mod, contentScale = ContentScale.Crop) else fallback()
 }
 
+val EXTL: Map<String, Pair<ImageVector, Color>> = run {
+    fun ex(vararg e: String, v: ImageVector, c: Color) = e.map { it to (v to c) }
+    (ex("pdf", v = Icons.Rounded.PictureAsPdf, c = Color(0xFFE53935)) +
+        ex("doc", "docx", "odt", "rtf", v = Icons.Rounded.Description, c = Color(0xFF2B7CD3)) +
+        ex("xls", "xlsx", "csv", "ods", v = Icons.Rounded.TableChart, c = Color(0xFF1E9E5A)) +
+        ex("ppt", "pptx", "odp", v = Icons.Rounded.Slideshow, c = Color(0xFFE8710A)) +
+        ex("txt", "md", "log", v = Icons.Rounded.Description, c = Color(0xFF9AA0A6)) +
+        ex("js", "ts", "py", "html", "css", "json", "sh", "kt", "java", "xml", v = Icons.Rounded.Code, c = Color(0xFF26A69A)) +
+        ex("apk", "apks", "xapk", v = Icons.Rounded.Android, c = Color(0xFF3DDC84)) +
+        ex("zip", "rar", "7z", "tar", "gz", "tgz", "xz", v = Icons.Rounded.FolderZip, c = Color(0xFFFFB300))).toMap()
+}
+
 @Composable
 fun look(f: File): Pair<ImageVector, Color> {
     if (f.isDirectory) return Icons.Rounded.Folder to MaterialTheme.colorScheme.primary
+    EXTL[f.extension.lowercase()]?.let { return it }
     val c = Cat.entries.firstOrNull { it.exts.isNotEmpty() && it.matches(f) }
     return (c?.icon ?: Icons.Rounded.Description) to (c?.color ?: MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable
+fun FileIcon(f: File, size: Dp) {
+    val (icon, color) = look(f)
+    val th = hasThumb(f)
+    Box(Modifier.size(size).clip(if (th) RoundedCornerShape(size / 4) else CircleShape).background(color.copy(.18f)), contentAlignment = Alignment.Center) {
+        if (th) Thumb(f, Modifier.fillMaxSize()) { Icon(icon, null, tint = color, modifier = Modifier.size(size * .55f)) }
+        else Icon(icon, null, tint = color, modifier = Modifier.size(size * .55f))
+    }
 }
 
 // ---------- browse building blocks ----------
@@ -193,7 +220,6 @@ fun SecHeader(t: String) = Text(t, Modifier.padding(horizontal = 8.dp, vertical 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BrowseRow(f: File, sel: Boolean, m: VM, onClick: () -> Unit, onLong: () -> Unit) {
-    val (icon, color) = look(f)
     val compact = m.view == "compact"
     val s = if (compact) 34.dp else (38 + 24 * m.zoom).dp
     Row(
@@ -203,7 +229,7 @@ fun BrowseRow(f: File, sel: Boolean, m: VM, onClick: () -> Unit, onLong: () -> U
             .padding(horizontal = 8.dp, vertical = if (compact) 5.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(s).clip(CircleShape).background(color.copy(.18f)), contentAlignment = Alignment.Center) { Icon(icon, null, tint = color, modifier = Modifier.size(s * .55f)) }
+        FileIcon(f, s)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = if (compact) 15.sp else (14 + 3 * m.zoom).sp)
@@ -348,7 +374,7 @@ fun ArchiveScreen(f: File, onBack: () -> Unit) {
 @Composable
 fun Tile(f: File, big: Boolean, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit) {
     val (icon, color) = look(f)
-    val img = f.isFile && Cat.Images.matches(f)
+    val img = hasThumb(f)
     Column(
         Modifier.clip(RoundedCornerShape(16.dp)).background(if (sel) MaterialTheme.colorScheme.primary.copy(.25f) else Color.Transparent)
             .combinedClickable(onClick = onClick, onLongClick = onLong).padding(4.dp),
@@ -418,7 +444,11 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var more by remember { mutableStateOf(false) }
     var m by remember(dir) { mutableStateOf(vmFor(dir)) }
     var only by remember(dir) { mutableStateOf(S.p?.contains("vm:" + dir.path) == true) }
-    val list = remember(dir, rev, q, m, S.hidden, S.foldersFirst) { listDir(dir, q, m) }
+    val local = dir.path.startsWith(ROOT.path) && dir !is RootFile
+    val list: List<File> = if (local) remember(dir, rev, q, m, S.hidden, S.foldersFirst) { listDir(dir, q, m) } else {
+        val st by produceState(emptyList<File>(), dir, rev, q, m, S.hidden, S.foldersFirst) { value = withContext(Dispatchers.IO) { listDir(dir, q, m) } }
+        st
+    }
     val rows: List<Any> = remember(list, m) {
         if (m.sections) buildList<Any> {
             var last: String? = null
@@ -483,7 +513,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         }
         SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
         PathBar(dir, onJump)
-        if (list.isEmpty()) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f))
+        if (list.isEmpty()) Text(if (local) "Nothing here" else "Nothing here, or root access is needed. Allow FilesHub in your root manager.", modifier = Modifier.padding(24.dp).alpha(.6f))
         if (m.view == "grid" || m.view == "gallery") {
             val min = if (m.view == "gallery") 110 + 90 * m.zoom else 80 + 70 * m.zoom
             LazyVerticalGrid(

@@ -237,7 +237,7 @@ fun DrawerItem(label: String, icon: ImageVector, selected: Boolean, onClick: () 
 @Composable
 fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
     val pri = MaterialTheme.colorScheme.primary
-    ModalDrawerSheet(drawerContainerColor = if (S.dark) Color(0xF2101A2B) else Color(0xF2F3F8F7)) {
+    ModalDrawerSheet(drawerContainerColor = if (S.dark) Color(0xF20E0E10) else Color(0xF2F3F8F7)) {
         Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp)) {
             Surface(shape = RoundedCornerShape(28.dp), color = pri.copy(.15f), modifier = Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -269,7 +269,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.3.2", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.4.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
