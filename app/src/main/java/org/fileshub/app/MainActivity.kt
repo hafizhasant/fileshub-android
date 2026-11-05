@@ -210,7 +210,7 @@ fun App(tick: Int, startDir: String? = null) {
                         is Dest.Settings -> SettingsScreen(d.page, { go(Dest.Settings(it)) }) { back() }
                     }
                 }
-                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, { nav(Dest.Search("")) }, { scope.launch { ds.open() } }, Modifier.align(Alignment.CenterEnd))
+                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, { nav(Dest.Search("")) }, { scope.launch { ds.open() } }, Modifier.align(Alignment.BottomCenter))
             }
         }
         }
