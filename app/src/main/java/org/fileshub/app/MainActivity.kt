@@ -95,8 +95,10 @@ fun fmt(b: Long): String = when {
     else -> "$b B"
 }
 
-fun sizeText(f: File) = if (f.isDirectory) (if (f is RootFile) "Folder" else "${f.list()?.size ?: 0} items") else fmt(f.length())
-fun dateText(f: File): String = java.text.SimpleDateFormat("d MMM yyyy, HH:mm", java.util.Locale.getDefault()).format(Date(f.lastModified()))
+val dirCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+fun sizeText(f: File) = if (f.isDirectory) (if (f is RootFile) "Folder" else "${dirCounts.getOrPut(f.path + f.lastModified()) { f.list()?.size ?: 0 }} items") else fmt(f.length())
+private val DTF = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm")
+fun dateText(f: File): String = DTF.format(java.time.Instant.ofEpochMilli(f.lastModified()).atZone(java.time.ZoneId.systemDefault()))
 fun sub(f: File) = sizeText(f) + " · " + dateText(f)
 
 fun open(ctx: Context, f: File) {
@@ -129,6 +131,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        runCatching {
+            val best = display?.supportedModes?.maxByOrNull { it.refreshRate }
+            if (best != null) window.attributes = window.attributes.also { it.preferredRefreshRate = best.refreshRate }
+        }
         runCatching { val old = File(ROOT, ".cairn-bin"); if (old.exists() && !BIN.exists()) old.renameTo(BIN) }
         val crash = File(filesDir, "crash.txt")
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
@@ -186,9 +192,7 @@ fun App(tick: Int, startDir: String? = null) {
             c.isAppearanceLightStatusBars = !S.dark; c.isAppearanceLightNavigationBars = !S.dark
         }
     }
-    val scheme = if (S.dark) darkColorScheme(
-        primary = Color(0xFFFF8F4D), onPrimary = Color.Black, onBackground = Color.White, onSurface = Color.White, background = Color(0xFF151515), surface = Color(0xFF1E1E1E), surfaceContainer = Color(0xFF1E1E1E), secondaryContainer = Color(0xFF3A2E27), onSecondaryContainer = Color.White
-    ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
+    val scheme = appScheme(ctx)
     MaterialTheme(colorScheme = scheme) {
         Pending.apk?.let { InstallDialog(it) { Pending.apk = null } }
         Box(Modifier.fillMaxSize().background(bgBrush())) {
@@ -198,11 +202,12 @@ fun App(tick: Int, startDir: String? = null) {
                 Box(Modifier.fillMaxSize().statusBarsPadding()) {
                     if (!granted) Perm() else when (val d = top) {
                         is Dest.Home -> PullToRefreshBox(refreshing, { scope.launch { refreshing = true; rev++; delay(700); refreshing = false } }, Modifier.fillMaxSize()) {
-                            Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
+                            Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }, { go(Dest.Analyzer) }) { go(Dest.Category(it)) }
                         }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
                         is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) })
                         is Dest.Archive -> ArchiveScreen(d.f) { back() }
+                        is Dest.Analyzer -> AnalyzerScreen(scan, { back() }) { go(Dest.Browse(it)) }
                         is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
                         is Dest.Search -> SearchScreen(d.q, { back() }) { go(Dest.Browse(it)) }
                         is Dest.Remotes -> ServersScreen({ back() }) { go(Dest.Net(it)) }
@@ -259,8 +264,8 @@ fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name
         Column(Modifier.weight(1f)) {
             Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
             Row(Modifier.fillMaxWidth()) {
-                Text(sizeText(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f).weight(1f))
-                Text(dateText(f), fontSize = 12.sp, modifier = Modifier.alpha(.6f))
+                Text(sizeText(f), fontSize = 12.sp, color = LocalContentColor.current.copy(alpha = .6f), modifier = Modifier.weight(1f))
+                Text(dateText(f), fontSize = 12.sp, color = LocalContentColor.current.copy(alpha = .6f))
             }
         }
     }

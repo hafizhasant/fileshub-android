@@ -130,7 +130,7 @@ fun listDir(dir: File, q: String, m: VM): List<File> {
     }
     val cmp = if (m.asc) base else base.reversed()
     var raw: List<File>? = dir.listFiles()?.toList()
-    if (raw.isNullOrEmpty() && !dir.path.startsWith(ROOT.path)) raw = rootList(dir) ?: raw
+    if (raw.isNullOrEmpty() && isRestricted(dir)) raw = rootList(dir) ?: raw
     val l = (raw ?: emptyList()).filter { (S.hidden || !it.name.startsWith(".")) && it.name.contains(q, true) }
     return if (S.foldersFirst) l.sortedWith(compareBy<File> { !it.isDirectory }.then(cmp)) else l.sortedWith(cmp)
 }
@@ -203,7 +203,7 @@ fun decodeThumb(f: File): ImageBitmap? {
     val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(f.path, o)
     var s = 1
-    while (o.outWidth / s > 512 || o.outHeight / s > 512) s *= 2
+    while (o.outWidth / s > 256 || o.outHeight / s > 256) s *= 2
     return BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = s })?.asImageBitmap()
 }
 
@@ -212,7 +212,7 @@ fun Thumb(f: File, mod: Modifier, fallback: @Composable () -> Unit) {
     val ctx = LocalContext.current
     val key = f.path + f.lastModified()
     val bmp by produceState<ImageBitmap?>(thumbs.get(key), key) {
-        if (value == null) value = withContext(Dispatchers.IO) { runCatching { makeThumb(ctx, f) }.getOrNull()?.also { thumbs.put(key, it) } }
+        if (value == null) value = withContext(Dispatchers.IO) { thumbSem.acquire(); try { runCatching { makeThumb(ctx, f) }.getOrNull()?.also { thumbs.put(key, it) } } finally { thumbSem.release() } }
     }
     val b = bmp
     if (b != null) Image(b, null, mod, contentScale = ContentScale.Crop) else fallback()
@@ -270,8 +270,8 @@ fun BrowseRow(f: File, sel: Boolean, m: VM, check: Boolean, onClick: () -> Unit,
         Column(Modifier.weight(1f)) {
             Text(f.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium, fontSize = if (compact) 15.sp else (14 + 3 * m.zoom).sp)
             Row(Modifier.fillMaxWidth()) {
-                Text(sizeText(f), fontSize = 11.sp, modifier = Modifier.alpha(.6f).weight(1f))
-                Text(dateText(f), fontSize = 11.sp, modifier = Modifier.alpha(.6f))
+                Text(sizeText(f), fontSize = 11.sp, color = LocalContentColor.current.copy(alpha = .6f), modifier = Modifier.weight(1f))
+                Text(dateText(f), fontSize = 11.sp, color = LocalContentColor.current.copy(alpha = .6f))
             }
         }
     }
@@ -557,6 +557,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var sheet by remember { mutableStateOf<File?>(null) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
     var pw by remember { mutableStateOf<Pair<File, Boolean>?>(null) }
     val view = LocalView.current
     var confirm by remember { mutableStateOf<List<File>?>(null) }
@@ -566,11 +567,10 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var bmore by remember { mutableStateOf(false) }
     var m by remember(dir) { mutableStateOf(vmFor(dir)) }
     var only by remember(dir) { mutableStateOf(S.p?.contains("vm:" + dir.path) == true) }
-    val local = dir.path.startsWith(ROOT.path) && dir !is RootFile
-    val list: List<File> = if (local) remember(dir, rev, q, m, S.hidden, S.foldersFirst) { listDir(dir, q, m) } else {
-        val st by produceState(emptyList<File>(), dir, rev, q, m, S.hidden, S.foldersFirst) { value = withContext(Dispatchers.IO) { listDir(dir, q, m) } }
-        st
-    }
+    val local = !isRestricted(dir)
+    var listN by remember(dir) { mutableStateOf<List<File>?>(null) }
+    LaunchedEffect(dir, rev, q, m, S.hidden, S.foldersFirst) { listN = withContext(Dispatchers.IO) { listDir(dir, q, m) } }
+    val list: List<File> = listN ?: emptyList()
     val rows: List<Any> = remember(list, m) {
         if (m.sections) buildList<Any> {
             var last: String? = null
@@ -654,7 +654,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             }
             SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
             PathBar(dir, onJump)
-            if (list.isEmpty()) Text(if (local) "Nothing here" else "Nothing here, or root access is needed. Allow FilesHub in your root manager.", modifier = Modifier.padding(24.dp).alpha(.6f))
+            if (listN != null && list.isEmpty()) { if (local) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f)) else RestrictedBox { bump() } }
             PullToRefreshBox(refreshing, { scope.launch { refreshing = true; bump(); delay(600); refreshing = false } }, Modifier.fillMaxSize()) {
             if (m.view == "grid" || m.view == "gallery") {
                 val gal = m.view == "gallery"
@@ -669,14 +669,14 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                             Box {
                                 if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
                                 else GridTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
-                                itemMenu(r)
+                                if (menuFor == r) itemMenu(r)
                             }
                         }
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad)) {
                 items(rows) { r ->
-                    if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); itemMenu(r) }
+                    if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); if (menuFor == r) itemMenu(r) }
                 }
             }
             }
@@ -686,9 +686,9 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             val first = sel.firstOrNull()
             var expanded by remember { mutableStateOf(!S.actionFab) }
             if (!expanded) {
-                FloatingActionButton({ expanded = true }, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 96.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Rounded.Apps, "Actions") }
+                FloatingActionButton({ expanded = true }, Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 24.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Rounded.Apps, "Actions") }
             } else Column(
-                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 92.dp).blurBar(CircleShape, false).padding(vertical = 6.dp, horizontal = 4.dp),
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 24.dp).blurBar(CircleShape, false).padding(vertical = 6.dp, horizontal = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 if (S.actionFab) IconButton({ expanded = false }) { Icon(Icons.Rounded.Close, "Collapse") }
@@ -822,7 +822,7 @@ fun CatTile(c: Cat, count: String, mod: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-fun StorageCard(used: Float, free: Long, total: Long, compact: Boolean, mod: Modifier, onClick: () -> Unit) {
+fun StorageCard(used: Float, free: Long, total: Long, compact: Boolean, mod: Modifier, onAnalyze: (() -> Unit)? = null, onClick: () -> Unit) {
     val pri = MaterialTheme.colorScheme.primary
     Column(mod.glass(28.dp).clickable { onClick() }.padding(if (compact) 14.dp else 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -830,9 +830,19 @@ fun StorageCard(used: Float, free: Long, total: Long, compact: Boolean, mod: Mod
                 Icon(Icons.Rounded.Folder, null, tint = pri)
             }
             Spacer(Modifier.width(12.dp))
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text("Internal Storage", fontSize = if (compact) 15.sp else 20.sp, fontWeight = FontWeight.SemiBold)
                 Text(ROOT.path, fontSize = 12.sp, modifier = Modifier.alpha(.65f))
+            }
+            if (onAnalyze != null) {
+                var mm by remember { mutableStateOf(false) }
+                Box {
+                    IconButton({ mm = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    DropdownMenu(mm, { mm = false }) {
+                        DropdownMenuItem(text = { Text("Storage analyzer") }, leadingIcon = { Icon(Icons.Rounded.PieChart, null) }, onClick = { mm = false; onAnalyze() })
+                        DropdownMenuItem(text = { Text("Open storage") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { mm = false; onClick() })
+                    }
+                }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -859,7 +869,7 @@ fun Donut(used: Float, mod: Modifier) {
 }
 
 @Composable
-fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onFolder: (File) -> Unit, onCat: (Cat) -> Unit) {
+fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onFolder: (File) -> Unit, onAnalyze: () -> Unit, onCat: (Cat) -> Unit) {
     val ctx = LocalContext.current
     val st = remember { StatFs(ROOT.path) }
     val total = st.totalBytes; val free = st.availableBytes
@@ -883,7 +893,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
             1 -> {
                 item {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        StorageCard(used, free, total, true, Modifier.weight(1f).height(170.dp)) { onFolder(ROOT) }
+                        StorageCard(used, free, total, true, Modifier.weight(1f).height(170.dp), onAnalyze) { onFolder(ROOT) }
                         Column(Modifier.weight(1f).height(170.dp).glass(28.dp).padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                             Box(Modifier.size(104.dp), contentAlignment = Alignment.Center) {
                                 Donut(used, Modifier.fillMaxSize())
@@ -942,7 +952,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
                 }
             }
             else -> {
-                item { StorageCard(used, free, total, false, Modifier.fillMaxWidth()) { onFolder(ROOT) } }
+                item { StorageCard(used, free, total, false, Modifier.fillMaxWidth(), onAnalyze) { onFolder(ROOT) } }
                 item { SectionHeader("Quick Categories", S.catsOpen) { S.catsOpen = !S.catsOpen; S.save() } }
                 if (S.catsOpen) items(Cat.entries.chunked(4)) { row ->
                     Row(Modifier.fillMaxWidth()) {
