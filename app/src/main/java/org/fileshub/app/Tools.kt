@@ -1,6 +1,8 @@
 package org.fileshub.app
 
 import android.content.Context
+import android.content.pm.PackageManager
+import rikka.shizuku.Shizuku
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -42,14 +44,11 @@ class RootFile(path: String, private val dirFlag: Boolean, private val len: Long
 fun rootList(dir: File): List<File>? = runCatching {
     val q = dir.path.replace("'", "'\\''")
     val cmd = "cd '$q' && for f in * .[!.]*; do [ -e \"\$f\" ] && stat -L -c '%F|%s|%Y|%n' \"\$f\"; done 2>/dev/null"
-    val p = ProcessBuilder("su", "-c", cmd).start()
-    val lines = p.inputStream.bufferedReader().readLines()
-    p.waitFor()
-    lines.mapNotNull { l ->
+    runShell(cmd)?.mapNotNull { l ->
         val a = l.split("|", limit = 4)
         if (a.size < 4) null
         else RootFile(File(dir, a[3]).path, a[0].contains("directory"), a[1].toLongOrNull() ?: 0L, (a[2].toLongOrNull() ?: 0L) * 1000)
-    }.takeIf { it.isNotEmpty() }
+    }?.takeIf { it.isNotEmpty() }
 }.getOrNull()
 
 // ---------- thumbnails ----------
@@ -88,7 +87,7 @@ fun apkIcon(ctx: Context, f: File): ImageBitmap? {
 }
 
 fun makeThumb(ctx: Context, f: File): ImageBitmap? = when (f.extension.lowercase()) {
-    "mp4", "mkv", "mov", "avi", "webm", "3gp" -> ThumbnailUtils.createVideoThumbnail(f, android.util.Size(320, 320), null).asImageBitmap()
+    "mp4", "mkv", "mov", "avi", "webm", "3gp" -> ThumbnailUtils.createVideoThumbnail(f, android.util.Size(256, 256), null).asImageBitmap()
     "pdf" -> pdfThumb(f)
     "apk" -> apkIcon(ctx, f)
     "mp3", "flac", "m4a", "ogg", "opus", "wav", "aac" -> audioArt(f)
@@ -178,3 +177,29 @@ fun pinShortcut(ctx: Context, f: File) {
         .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(ctx, R.mipmap.ic_launcher)).build()
     androidx.core.content.pm.ShortcutManagerCompat.requestPinShortcut(ctx, info, null)
 }
+
+// ---------- Shizuku / shell access ----------
+fun shizukuOk(): Boolean = runCatching { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED }.getOrDefault(false)
+
+fun shizukuExec(cmd: String): List<String>? = runCatching {
+    val m = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+    m.isAccessible = true
+    val p = m.invoke(null, arrayOf("sh", "-c", cmd), null, null) as Process
+    val lines = p.inputStream.bufferedReader().readLines()
+    p.waitFor()
+    lines
+}.getOrNull()
+
+fun runShell(cmd: String): List<String>? {
+    if (shizukuOk()) shizukuExec(cmd)?.let { if (it.isNotEmpty()) return it }
+    return runCatching {
+        val p = ProcessBuilder("su", "-c", cmd).start()
+        val lines = p.inputStream.bufferedReader().readLines()
+        p.waitFor()
+        lines
+    }.getOrNull()
+}
+
+fun isRestricted(d: File) = !d.path.startsWith(ROOT.path) || d.path.contains("/Android/data") || d.path.contains("/Android/obb")
+
+val thumbSem = kotlinx.coroutines.sync.Semaphore(3)

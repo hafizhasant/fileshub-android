@@ -49,6 +49,7 @@ sealed interface Dest {
     class Net(val s: Server) : Dest
     class Settings(val page: Int) : Dest
     class Archive(val f: File) : Dest
+    object Analyzer : Dest
 }
 
 object S {
@@ -70,6 +71,7 @@ object S {
     var catsOpen by mutableStateOf(true)
     var recentOpen by mutableStateOf(true)
     var actionFab by mutableStateOf(false)
+    var accent by mutableStateOf(0)
     fun load(c: Context) {
         val s = c.getSharedPreferences("fileshub", 0); p = s
         if (!s.getBoolean("d4", false)) s.edit().putString("vw", "compact").putString("sort", "date").putBoolean("asc", false).putBoolean("d4", true).apply()
@@ -78,13 +80,13 @@ object S {
         confirmDel = s.getBoolean("cd", true); useBin = s.getBoolean("ub", true)
         haptics = s.getBoolean("hp", true); glass = s.getBoolean("gl", true); homeStyle = s.getInt("hs", 0)
         view = s.getString("vw", "list") ?: "list"; asc = s.getBoolean("asc", true); zoom = s.getFloat("zm", 0.5f)
-        sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true); actionFab = s.getBoolean("afab", false)
+        sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true); actionFab = s.getBoolean("afab", false); accent = s.getInt("acc", 0)
     }
     fun save() {
         p?.edit()?.putBoolean("dark", dark)?.putBoolean("hidden", hidden)?.putBoolean("ff", foldersFirst)?.putString("sort", sort)
             ?.putBoolean("sb", startBrowse)?.putBoolean("cd", confirmDel)?.putBoolean("ub", useBin)
             ?.putBoolean("hp", haptics)?.putBoolean("gl", glass)?.putInt("hs", homeStyle)?.putString("vw", view)
-            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.putBoolean("afab", actionFab)?.apply()
+            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.putBoolean("afab", actionFab)?.putInt("acc", accent)?.apply()
     }
 }
 
@@ -174,6 +176,7 @@ fun sections() = listOf(
         sw("Vibrate on tap", { S.haptics }, { S.haptics = it }))),
     Sec("Appearance & Themes", "Theme, home style and glass", Icons.Rounded.Palette, listOf(
         sw("Dark theme", { S.dark }, { S.dark = it }),
+        Opt("Accent colour", { ACC[S.accent.coerceIn(0, ACC.lastIndex)].first }, { S.accent = (S.accent + 1) % ACC.size; S.save() }),
         Opt("Home style", { listOf("Minimal dark", "Enhanced detail", "List focus")[S.homeStyle] }, { S.homeStyle = (S.homeStyle + 1) % 3; S.save() }))),
     Sec("File Explorer Options", "Hidden files and browsing", Icons.Rounded.FolderOpen, listOf(
         sw("Show hidden files", { S.hidden }, { S.hidden = it }))),
@@ -270,7 +273,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.5.4", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.6.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
