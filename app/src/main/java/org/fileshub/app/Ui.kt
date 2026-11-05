@@ -84,11 +84,8 @@ fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
 @Composable
 fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, onSearch: () -> Unit, onMenu: () -> Unit, mod: Modifier) {
     val pri = MaterialTheme.colorScheme.primary
-    val off = MaterialTheme.colorScheme.onSurface
-    Column(
-        mod.navigationBarsPadding().padding(end = 10.dp).blurBar(CircleShape).padding(vertical = 8.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    val off = MaterialTheme.colorScheme.onSurface.copy(.8f)
+    Row(mod.navigationBarsPadding().padding(bottom = 10.dp).blurBar(CircleShape).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         listOf(
             Triple(Icons.Rounded.Home, "Home", top is Dest.Home) to onHome,
             Triple(Icons.Rounded.Folder, "Browse", top is Dest.Browse) to onBrowse,
@@ -96,8 +93,12 @@ fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, onSearch: (
             Triple(Icons.Rounded.Menu, "Menu", false) to onMenu
         ).forEach { (t, click) ->
             val (icon, label, on) = t
-            IconButton(click, Modifier.size(48.dp).clip(CircleShape).background(if (on) Color.White.copy(.14f) else Color.Transparent)) {
+            Column(
+                Modifier.clip(CircleShape).background(if (on) pri.copy(.2f) else Color.Transparent).clickable { click() }.padding(horizontal = 18.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Icon(icon, label, tint = if (on) pri else off)
+                Text(label, fontSize = 11.sp, color = if (on) pri else off)
             }
         }
     }
@@ -622,7 +623,6 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             DropdownMenuItem(text = { Text("Properties") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, onClick = { menuFor = null; info = listOf(f) })
         }
     }
-    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
     val bottomPad = 100.dp
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -684,10 +684,14 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         if (selecting) {
             val one = sel.size == 1
             val first = sel.firstOrNull()
-            Row(
-                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).blurBar(CircleShape, false).padding(horizontal = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+            var expanded by remember { mutableStateOf(!S.actionFab) }
+            if (!expanded) {
+                FloatingActionButton({ expanded = true }, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 96.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Rounded.Apps, "Actions") }
+            } else Column(
+                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 92.dp).blurBar(CircleShape, false).padding(vertical = 6.dp, horizontal = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
+                if (S.actionFab) IconButton({ expanded = false }) { Icon(Icons.Rounded.Close, "Collapse") }
                 IconButton({ Clip.set(sel.toList(), true); exit() }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.ContentCut, "Cut") }
                 IconButton({ Clip.set(sel.toList(), false); exit() }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.ContentCopy, "Copy") }
                 IconButton({ askDel(sel.toList()) }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.Delete, "Delete") }

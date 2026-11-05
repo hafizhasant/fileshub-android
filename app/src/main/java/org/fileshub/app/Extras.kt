@@ -69,6 +69,7 @@ object S {
     var sections by mutableStateOf(true)
     var catsOpen by mutableStateOf(true)
     var recentOpen by mutableStateOf(true)
+    var actionFab by mutableStateOf(false)
     fun load(c: Context) {
         val s = c.getSharedPreferences("fileshub", 0); p = s
         if (!s.getBoolean("d4", false)) s.edit().putString("vw", "compact").putString("sort", "date").putBoolean("asc", false).putBoolean("d4", true).apply()
@@ -77,13 +78,13 @@ object S {
         confirmDel = s.getBoolean("cd", true); useBin = s.getBoolean("ub", true)
         haptics = s.getBoolean("hp", true); glass = s.getBoolean("gl", true); homeStyle = s.getInt("hs", 0)
         view = s.getString("vw", "list") ?: "list"; asc = s.getBoolean("asc", true); zoom = s.getFloat("zm", 0.5f)
-        sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true)
+        sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true); actionFab = s.getBoolean("afab", false)
     }
     fun save() {
         p?.edit()?.putBoolean("dark", dark)?.putBoolean("hidden", hidden)?.putBoolean("ff", foldersFirst)?.putString("sort", sort)
             ?.putBoolean("sb", startBrowse)?.putBoolean("cd", confirmDel)?.putBoolean("ub", useBin)
             ?.putBoolean("hp", haptics)?.putBoolean("gl", glass)?.putInt("hs", homeStyle)?.putString("vw", view)
-            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.apply()
+            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.putBoolean("afab", actionFab)?.apply()
     }
 }
 
@@ -182,6 +183,7 @@ fun sections() = listOf(
         sw("Folders first", { S.foldersFirst }, { S.foldersFirst = it }))),
     Sec("Media Preferences", "Album view and thumbnails", Icons.Rounded.PermMedia, emptyList()),
     Sec("File Actions & Viewers", "Confirmations when changing files", Icons.Rounded.Tune, listOf(
+        sw("Collapse actions into a button", { S.actionFab }, { S.actionFab = it }),
         sw("Confirm before deleting", { S.confirmDel }, { S.confirmDel = it }))),
     Sec("Recycle Bin (Trash)", "What happens when you delete", Icons.Rounded.Delete, listOf(
         sw("Move deleted files to the bin", { S.useBin }, { S.useBin = it })))
@@ -268,7 +270,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.5.3", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.5.4", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
