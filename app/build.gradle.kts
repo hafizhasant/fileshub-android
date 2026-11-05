@@ -10,8 +10,8 @@ android {
         applicationId = "org.fileshub.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.5.2"
+        versionCode = 10
+        versionName = "0.5.3"
     }
     signingConfigs { getByName("debug") { storeFile = file("fileshub-debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildFeatures { compose = true }
@@ -27,7 +27,6 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("commons-net:commons-net:3.11.1")
-    implementation("dev.chrisbanes.haze:haze:1.1.1")
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("org.tukaani:xz:1.10")
     implementation("com.hierynomus:smbj:0.13.0")

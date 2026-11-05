@@ -6,8 +6,6 @@ import kotlinx.coroutines.delay
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeChild
 import androidx.activity.compose.BackHandler
 import android.graphics.BitmapFactory
 import android.os.StatFs
@@ -69,21 +67,18 @@ import java.util.zip.ZipOutputStream
 
 // ---------- frosted glass look ----------
 fun Modifier.glass(r: Dp = 24.dp, shape: Shape = RoundedCornerShape(r)): Modifier =
-    clip(shape).background(if (S.dark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF))
+    clip(shape).background(if (S.dark) Color(0xFF1E1E1E) else Color(0xFFFFFFFF))
 
-fun bgBrush(): Brush = if (S.dark) Brush.verticalGradient(listOf(Color(0xFF0E0E10), Color(0xFF0E0E10)))
+fun bgBrush(): Brush = if (S.dark) Brush.verticalGradient(listOf(Color(0xFF151515), Color(0xFF151515)))
 else Brush.verticalGradient(listOf(Color(0xFFF2F4F6), Color(0xFFF2F4F6)))
 
-val LocalHaze = compositionLocalOf<HazeState?> { null }
 object UiState { var hideNav by mutableStateOf(false) }
 
 @Composable
 fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
-    val hz = LocalHaze.current
     val dark = S.dark
-    val base = clip(shape).border(1.dp, (if (dark) Color.White else Color.Black).copy(.08f), shape)
-    return if (S.glass && blur && hz != null) base.hazeChild(hz) { blurRadius = 24.dp }.background((if (dark) Color(0xFF151517) else Color.White).copy(.55f))
-    else base.background(if (dark) Color(0xF01C1C1E) else Color(0xF0FFFFFF))
+    return clip(shape).border(1.dp, (if (dark) Color.White else Color.Black).copy(.08f), shape)
+        .background(if (dark) Color(0xF01E1E1E) else Color(0xF0FFFFFF))
 }
 
 @Composable

@@ -173,7 +173,6 @@ fun sections() = listOf(
         sw("Vibrate on tap", { S.haptics }, { S.haptics = it }))),
     Sec("Appearance & Themes", "Theme, home style and glass", Icons.Rounded.Palette, listOf(
         sw("Dark theme", { S.dark }, { S.dark = it }),
-        sw("Blur effects (Android 12+)", { S.glass }, { S.glass = it }),
         Opt("Home style", { listOf("Minimal dark", "Enhanced detail", "List focus")[S.homeStyle] }, { S.homeStyle = (S.homeStyle + 1) % 3; S.save() }))),
     Sec("File Explorer Options", "Hidden files and browsing", Icons.Rounded.FolderOpen, listOf(
         sw("Show hidden files", { S.hidden }, { S.hidden = it }))),
@@ -269,7 +268,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.5.2", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.5.3", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
