@@ -1,6 +1,11 @@
 package org.fileshub.app
 
 import android.content.Context
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeChild
 import androidx.activity.compose.BackHandler
 import android.graphics.BitmapFactory
 import android.os.StatFs
@@ -62,13 +67,40 @@ import java.util.zip.ZipOutputStream
 
 // ---------- frosted glass look ----------
 fun Modifier.glass(r: Dp = 24.dp, shape: Shape = RoundedCornerShape(r)): Modifier =
-    if (!S.glass) clip(shape).background(if (S.dark) Color(0xFF1B2128) else Color(0xFFE4ECEB))
-    else if (S.dark) clip(shape).background(Brush.linearGradient(listOf(Color.White.copy(.14f), Color.White.copy(.04f)))).border(1.dp, Color.White.copy(.16f), shape)
-    else clip(shape).background(Color.White.copy(.6f)).border(1.dp, Color.White.copy(.9f), shape)
+    clip(shape).background(if (S.dark) Color(0xFF1C1C1E) else Color(0xFFFFFFFF))
 
-fun bgBrush(): Brush = if (S.dark)
-    Brush.radialGradient(listOf(Color(0xFF2A2A30), Color(0xFF0B0B0D), Color(0xFF000000)), center = Offset(250f, 0f), radius = 2200f)
-else Brush.verticalGradient(listOf(Color(0xFFDDEFEE), Color(0xFFF3F8F7)))
+fun bgBrush(): Brush = if (S.dark) Brush.verticalGradient(listOf(Color(0xFF0E0E10), Color(0xFF0E0E10)))
+else Brush.verticalGradient(listOf(Color(0xFFF2F4F6), Color(0xFFF2F4F6)))
+
+val LocalHaze = compositionLocalOf<HazeState?> { null }
+object UiState { var hideNav by mutableStateOf(false) }
+
+@Composable
+fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
+    val hz = LocalHaze.current
+    val dark = S.dark
+    val base = clip(shape).border(1.dp, (if (dark) Color.White else Color.Black).copy(.08f), shape)
+    return if (S.glass && blur && hz != null) base.hazeChild(hz) { blurRadius = 24.dp }.background((if (dark) Color(0xFF151517) else Color.White).copy(.55f))
+    else base.background(if (dark) Color(0xF01C1C1E) else Color(0xF0FFFFFF))
+}
+
+@Composable
+fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, mod: Modifier) {
+    val pri = MaterialTheme.colorScheme.primary
+    val off = MaterialTheme.colorScheme.onSurface.copy(.8f)
+    Row(mod.navigationBarsPadding().padding(bottom = 10.dp).blurBar(CircleShape).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        listOf(Triple("Home", Icons.Rounded.Home, top is Dest.Home) to onHome, Triple("Browse", Icons.Rounded.Folder, top is Dest.Browse) to onBrowse).forEach { (t, click) ->
+            val (label, icon, on) = t
+            Column(
+                Modifier.clip(CircleShape).background(if (on) pri.copy(.2f) else Color.Transparent).clickable { click() }.padding(horizontal = 24.dp, vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(icon, null, tint = if (on) pri else off)
+                Text(label, fontSize = 12.sp, color = if (on) pri else off, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+            }
+        }
+    }
+}
 
 fun toast(c: Context, s: String) = Toast.makeText(c, s, Toast.LENGTH_SHORT).show()
 
@@ -343,7 +375,7 @@ fun ArchiveScreen(f: File, onBack: () -> Unit) {
             }
             val list = kids.values.sortedWith(compareBy({ !it.dir }, { it.name.lowercase() }))
             if (list.isEmpty()) Text("Empty", Modifier.padding(24.dp).alpha(.6f))
-            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+            LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) {
                 items(list) { e ->
                     val cat = if (e.dir) null else Cat.entries.firstOrNull { it.exts.isNotEmpty() && e.name.substringAfterLast('.', "").lowercase() in it.exts }
                     val color = if (e.dir) pri else cat?.color ?: MaterialTheme.colorScheme.onSurfaceVariant
@@ -521,6 +553,9 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var ask by remember { mutableStateOf<String?>(null) }
     var q by remember(dir) { mutableStateOf("") }
     var sheet by remember { mutableStateOf<File?>(null) }
+    var menuFor by remember { mutableStateOf<File?>(null) }
+    var pw by remember { mutableStateOf<Pair<File, Boolean>?>(null) }
+    val view = LocalView.current
     var confirm by remember { mutableStateOf<List<File>?>(null) }
     var info by remember { mutableStateOf<List<File>?>(null) }
     var vmenu by remember { mutableStateOf(false) }
@@ -544,7 +579,10 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     fun exit() { sel = emptySet(); selMode = false }
     fun toggle(f: File) { sel = if (f in sel) sel - f else sel + f }
     fun tap(f: File) { if (selecting) toggle(f) else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
-    fun hold(f: File) { if (selecting) toggle(f) else sheet = f }
+    fun hold(f: File) {
+        if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        if (selecting) toggle(f) else { selMode = true; sel = setOf(f); menuFor = f }
+    }
     fun del(l: List<File>) { doDelete(ctx, l); exit(); bump() }
     fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
     fun paste() {
@@ -569,7 +607,21 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             exit(); bump()
         }
     }
-    val bottomPad = if (selecting) 96.dp else 12.dp
+    val itemMenu: @Composable (File) -> Unit = { f ->
+        DropdownMenu(menuFor == f, { menuFor = null }) {
+            DropdownMenuItem(text = { Text("Archive") }, leadingIcon = { Icon(Icons.Rounded.Archive, null) }, onClick = { menuFor = null; compress(listOf(f)) })
+            if (isArchive(f)) DropdownMenuItem(text = { Text("Extract") }, leadingIcon = { Icon(Icons.Rounded.Unarchive, null) }, onClick = { menuFor = null; extractIt(f) })
+            if (f.isFile) DropdownMenuItem(
+                text = { Text(if (f.extension.equals("fhe", true)) "Decrypt" else "Encrypt") }, leadingIcon = { Icon(Icons.Rounded.Lock, null) },
+                onClick = { menuFor = null; pw = f to !f.extension.equals("fhe", true) })
+            if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, leadingIcon = { Icon(Icons.Rounded.Apps, null) }, onClick = { menuFor = null; openWith(ctx, f) })
+            if (f.isDirectory) DropdownMenuItem(text = { Text("Open directory") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { menuFor = null; exit(); onEnter(f) })
+            DropdownMenuItem(text = { Text("Create shortcut") }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) }, onClick = { menuFor = null; pinShortcut(ctx, f) })
+            DropdownMenuItem(text = { Text("Properties") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, onClick = { menuFor = null; info = listOf(f) })
+        }
+    }
+    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
+    val bottomPad = 100.dp
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             if (selecting) {
@@ -611,14 +663,17 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     rows.forEach { r ->
                         if (r is String) item(span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
                         else if (r is File) item {
-                            if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
-                            else GridTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
+                            Box {
+                                if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
+                                else GridTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
+                                itemMenu(r)
+                            }
                         }
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad)) {
                 items(rows) { r ->
-                    if (r is String) SecHeader(r) else if (r is File) BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) })
+                    if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); itemMenu(r) }
                 }
             }
         }
@@ -626,8 +681,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             val one = sel.size == 1
             val first = sel.firstOrNull()
             Row(
-                Modifier.align(Alignment.BottomCenter).padding(12.dp).clip(CircleShape)
-                    .background(if (S.dark) Color(0xF01A1A1E) else Color(0xF0EEF3F3)).border(1.dp, Color.White.copy(.14f), CircleShape).padding(horizontal = 6.dp),
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(12.dp).blurBar(CircleShape, false).padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton({ Clip.set(sel.toList(), true); exit() }, enabled = sel.isNotEmpty()) { Icon(Icons.Rounded.ContentCut, "Cut") }
@@ -647,6 +701,29 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                 }
             }
         }
+    }
+    pw?.let { (f, enc) ->
+        var pass by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { pw = null },
+            title = { Text(if (enc) "Encrypt ${f.name}" else "Decrypt ${f.name}") },
+            text = { OutlinedTextField(pass, { pass = it }, label = { Text("Password") }, singleLine = true, visualTransformation = PasswordVisualTransformation()) },
+            confirmButton = {
+                TextButton({
+                    if (pass.isNotEmpty()) {
+                        pw = null
+                        val out = uniq(File(f.parentFile, if (enc) f.name + ".fhe" else f.name.removeSuffix(".fhe")))
+                        toast(ctx, if (enc) "Encrypting…" else "Decrypting…")
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { if (enc) encryptFile(f, out, pass.toCharArray()) else decryptFile(f, out, pass.toCharArray()) } }
+                            toast(ctx, if (r.isSuccess) "Created ${out.name}" else r.exceptionOrNull()?.message ?: "Failed")
+                            exit(); bump()
+                        }
+                    }
+                }) { Text(if (enc) "Encrypt" else "Decrypt") }
+            },
+            dismissButton = { TextButton({ pw = null }) { Text("Cancel") } }
+        )
     }
     sheet?.let { f ->
         ModalBottomSheet(onDismissRequest = { sheet = null }) {
@@ -785,7 +862,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
         if (S.homeStyle == 2) (ROOT.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() } ?: emptyList()) else emptyList()
     }
     fun count(c: Cat) = scan?.counts?.get(c)?.toString() ?: "…"
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 20.dp, 20.dp, 110.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("My Files", fontSize = 32.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

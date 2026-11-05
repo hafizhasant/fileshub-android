@@ -156,7 +156,7 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
         SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
         if (list == null) Text("Searching…", Modifier.padding(24.dp).alpha(.6f))
         else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
-        else LazyColumn(contentPadding = PaddingValues(12.dp)) {
+        else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
             items(list, key = { it.path }) { f -> FileRow(f, false, { if (f.isDirectory) onDir(f) else open(ctx, f) }, {}) }
         }
     }
@@ -173,7 +173,7 @@ fun sections() = listOf(
         sw("Vibrate on tap", { S.haptics }, { S.haptics = it }))),
     Sec("Appearance & Themes", "Theme, home style and glass", Icons.Rounded.Palette, listOf(
         sw("Dark theme", { S.dark }, { S.dark = it }),
-        sw("Frosted glass", { S.glass }, { S.glass = it }),
+        sw("Blur effects (Android 12+)", { S.glass }, { S.glass = it }),
         Opt("Home style", { listOf("Minimal dark", "Enhanced detail", "List focus")[S.homeStyle] }, { S.homeStyle = (S.homeStyle + 1) % 3; S.save() }))),
     Sec("File Explorer Options", "Hidden files and browsing", Icons.Rounded.FolderOpen, listOf(
         sw("Show hidden files", { S.hidden }, { S.hidden = it }))),
@@ -194,7 +194,7 @@ fun SettingsScreen(page: Int, onPage: (Int) -> Unit, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
         if (page < 0) {
             TopRow("More Settings", onBack)
-            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            LazyColumn(contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 100.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 items(secs.size) { i ->
                     val s = secs[i]
                     Card(
@@ -269,7 +269,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.5.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.5.1", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
@@ -315,7 +315,7 @@ fun ServersScreen(onBack: () -> Unit, onOpen: (Server) -> Unit) {
     Column(Modifier.fillMaxSize()) {
         TopRow("FTP & SMB servers", onBack) { IconButton({ adding = true }) { Icon(Icons.Rounded.Add, "Add server") } }
         if (list.isEmpty()) Text("No servers yet. Tap + to add an SMB share or FTP server.", Modifier.padding(24.dp).alpha(.6f))
-        LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+        LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) {
             items(list, key = { it.id }) { s ->
                 Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { onOpen(s) }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(44.dp).clip(CircleShape).background(pri.copy(.18f)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Cloud, null, tint = pri) }
@@ -355,7 +355,7 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         else {
             val items = r.getOrThrow().sortedWith(compareBy({ !it.dir }, { it.name.lowercase() }))
             if (items.isEmpty()) Text("This folder is empty", Modifier.padding(24.dp).alpha(.6f))
-            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+            LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) {
                 items(items, key = { it.name }) { x ->
                     val full = if (path.isEmpty()) x.name else "$path/${x.name}"
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {

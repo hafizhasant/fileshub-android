@@ -9,6 +9,8 @@ import android.os.StatFs
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -128,7 +130,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         runCatching { val old = File(ROOT, ".cairn-bin"); if (old.exists() && !BIN.exists()) old.renameTo(BIN) }
-        setContent { App(tick.intValue) }
+        setContent { App(tick.intValue, intent?.getStringExtra("path")) }
     }
     override fun onResume() { super.onResume(); tick.intValue++ }
 
@@ -146,12 +148,12 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun App(tick: Int) {
+fun App(tick: Int, startDir: String? = null) {
     val ctx = LocalContext.current
     remember { S.load(ctx) }
     val granted = remember(tick) { Environment.isExternalStorageManager() }
     var rev by remember { mutableIntStateOf(0) }
-    var stack by remember { mutableStateOf(listOf<Dest>(if (S.startBrowse) Dest.Browse(ROOT) else Dest.Home)) }
+    var stack by remember { mutableStateOf(if (startDir != null) listOf<Dest>(Dest.Home, Dest.Browse(File(startDir))) else listOf<Dest>(if (S.startBrowse) Dest.Browse(ROOT) else Dest.Home)) }
     val scan by produceState<Scan?>(null, granted, rev) {
         if (granted) value = withContext(Dispatchers.IO) { doScan() }
     }
@@ -166,6 +168,7 @@ fun App(tick: Int) {
     BackHandler(enabled = stack.size > 1) { back() }
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
+    val haze = remember { HazeState() }
     (ctx as? android.app.Activity)?.window?.let { w ->
         SideEffect {
             val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
@@ -173,23 +176,15 @@ fun App(tick: Int) {
         }
     }
     val scheme = if (S.dark) darkColorScheme(
-        primary = Color(0xFF3B9BE8), onBackground = Color.White, onSurface = Color.White, background = Color(0xFF000000), surface = Color(0xFF0B0B0D), surfaceContainer = Color(0xFF1A1A1D), secondaryContainer = Color(0xFF2A2A2E), onSecondaryContainer = Color.White
+        primary = Color(0xFFFF8F4D), onPrimary = Color.Black, onBackground = Color.White, onSurface = Color.White, background = Color(0xFF0E0E10), surface = Color(0xFF1C1C1E), surfaceContainer = Color(0xFF1C1C1E), secondaryContainer = Color(0xFF3A2E27), onSecondaryContainer = Color.White
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
         Pending.apk?.let { InstallDialog(it) { Pending.apk = null } }
         Box(Modifier.fillMaxSize().background(bgBrush())) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, LocalHaze provides haze) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
-            Scaffold(
-                containerColor = Color.Transparent,
-                bottomBar = {
-                    NavigationBar(containerColor = if (S.dark) Color(0xCC0A0A0C) else Color(0xCCF3F8F7)) {
-                        NavigationBarItem(top is Dest.Home, { nav(Dest.Home) }, { Icon(Icons.Rounded.Home, null) }, label = { Text("Home") })
-                        NavigationBarItem(top is Dest.Browse, { nav(Dest.Browse(ROOT)) }, { Icon(Icons.Rounded.Folder, null) }, label = { Text("Browse") })
-                    }
-                }
-            ) { pad ->
-                Box(Modifier.padding(pad).fillMaxSize()) {
+            Box(Modifier.fillMaxSize()) {
+                Box(Modifier.fillMaxSize().statusBarsPadding().haze(haze)) {
                     if (!granted) Perm() else when (val d = top) {
                         is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
@@ -202,6 +197,7 @@ fun App(tick: Int) {
                         is Dest.Settings -> SettingsScreen(d.page, { go(Dest.Settings(it)) }) { back() }
                     }
                 }
+                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, Modifier.align(Alignment.BottomCenter))
             }
         }
         }
@@ -264,7 +260,7 @@ fun CatScreen(c: Cat, onBack: () -> Unit) {
         TopRow(c.label, onBack)
         if (list == null) Text("Loading…", modifier = Modifier.padding(24.dp).alpha(.6f))
         else if (list.isEmpty()) Text("Nothing here yet", modifier = Modifier.padding(24.dp).alpha(.6f))
-        else LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) { items(list, key = { it.path }) { f -> FileRow(f, false, { open(ctx, f) }, {}) } }
+        else LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) { items(list, key = { it.path }) { f -> FileRow(f, false, { open(ctx, f) }, {}) } }
     }
 }
 
@@ -277,7 +273,7 @@ fun BinScreen(rev: Int, bump: () -> Unit, onBack: () -> Unit) {
             if (list.isNotEmpty()) TextButton({ list.forEach { it.deleteRecursively() }; bump() }) { Text("Empty") }
         }
         if (list.isEmpty()) Text("The bin is empty", modifier = Modifier.padding(24.dp).alpha(.6f))
-        LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+        LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) {
             items(list, key = { it.path }) { f ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.weight(1f)) { FileRow(f, false, {}, {}, f.name.substringAfter('_')) }
