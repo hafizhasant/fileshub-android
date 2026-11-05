@@ -11,8 +11,6 @@ import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import kotlinx.coroutines.delay
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.haze
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -181,7 +179,6 @@ fun App(tick: Int, startDir: String? = null) {
     BackHandler(enabled = stack.size > 1) { back() }
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
-    val haze = remember { HazeState() }
     var refreshing by remember { mutableStateOf(false) }
     (ctx as? android.app.Activity)?.window?.let { w ->
         SideEffect {
@@ -190,15 +187,15 @@ fun App(tick: Int, startDir: String? = null) {
         }
     }
     val scheme = if (S.dark) darkColorScheme(
-        primary = Color(0xFFFF8F4D), onPrimary = Color.Black, onBackground = Color.White, onSurface = Color.White, background = Color(0xFF0E0E10), surface = Color(0xFF1C1C1E), surfaceContainer = Color(0xFF1C1C1E), secondaryContainer = Color(0xFF3A2E27), onSecondaryContainer = Color.White
+        primary = Color(0xFFFF8F4D), onPrimary = Color.Black, onBackground = Color.White, onSurface = Color.White, background = Color(0xFF151515), surface = Color(0xFF1E1E1E), surfaceContainer = Color(0xFF1E1E1E), secondaryContainer = Color(0xFF3A2E27), onSecondaryContainer = Color.White
     ) else lightColorScheme(primary = Color(0xFF00696B), surfaceContainer = Color(0xFFE4ECEB))
     MaterialTheme(colorScheme = scheme) {
         Pending.apk?.let { InstallDialog(it) { Pending.apk = null } }
         Box(Modifier.fillMaxSize().background(bgBrush())) {
-        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground, LocalHaze provides haze) {
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
             Box(Modifier.fillMaxSize()) {
-                Box(Modifier.fillMaxSize().statusBarsPadding().haze(haze)) {
+                Box(Modifier.fillMaxSize().statusBarsPadding()) {
                     if (!granted) Perm() else when (val d = top) {
                         is Dest.Home -> PullToRefreshBox(refreshing, { scope.launch { refreshing = true; rev++; delay(700); refreshing = false } }, Modifier.fillMaxSize()) {
                             Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
