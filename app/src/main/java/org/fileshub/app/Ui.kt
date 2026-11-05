@@ -557,7 +557,6 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var sheet by remember { mutableStateOf<File?>(null) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     var refreshing by remember { mutableStateOf(false) }
-    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
     var pw by remember { mutableStateOf<Pair<File, Boolean>?>(null) }
     val view = LocalView.current
     var confirm by remember { mutableStateOf<List<File>?>(null) }
@@ -578,6 +577,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
         } else list
     }
     val selecting = selMode || sel.isNotEmpty()
+    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
     fun setM(n: VM, save: Boolean) { m = n; if (save) saveVm(dir, n, only) }
     fun exit() { sel = emptySet(); selMode = false }
     fun toggle(f: File) { sel = if (f in sel) sel - f else sel + f }
