@@ -9,6 +9,8 @@ import android.os.StatFs
 import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import kotlinx.coroutines.delay
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import android.webkit.MimeTypeMap
@@ -130,7 +132,17 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         runCatching { val old = File(ROOT, ".cairn-bin"); if (old.exists() && !BIN.exists()) old.renameTo(BIN) }
-        setContent { App(tick.intValue, intent?.getStringExtra("path")) }
+        val crash = File(filesDir, "crash.txt")
+        Thread.setDefaultUncaughtExceptionHandler { _, e ->
+            runCatching { crash.writeText(e.stackTraceToString()) }
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
+        val prev = if (crash.exists()) runCatching { crash.readText() }.getOrNull() else null
+        setContent {
+            var shown by remember { mutableStateOf(prev) }
+            val t = shown
+            if (t != null) CrashScreen(t) { crash.delete(); shown = null } else App(tick.intValue, intent?.getStringExtra("path"))
+        }
     }
     override fun onResume() { super.onResume(); tick.intValue++ }
 
@@ -147,6 +159,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun App(tick: Int, startDir: String? = null) {
     val ctx = LocalContext.current
@@ -169,6 +182,7 @@ fun App(tick: Int, startDir: String? = null) {
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
     val haze = remember { HazeState() }
+    var refreshing by remember { mutableStateOf(false) }
     (ctx as? android.app.Activity)?.window?.let { w ->
         SideEffect {
             val c = androidx.core.view.WindowCompat.getInsetsController(w, w.decorView)
@@ -186,7 +200,9 @@ fun App(tick: Int, startDir: String? = null) {
             Box(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxSize().statusBarsPadding().haze(haze)) {
                     if (!granted) Perm() else when (val d = top) {
-                        is Dest.Home -> Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
+                        is Dest.Home -> PullToRefreshBox(refreshing, { scope.launch { refreshing = true; rev++; delay(700); refreshing = false } }, Modifier.fillMaxSize()) {
+                            Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }) { go(Dest.Category(it)) }
+                        }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
                         is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) })
                         is Dest.Archive -> ArchiveScreen(d.f) { back() }
@@ -197,10 +213,23 @@ fun App(tick: Int, startDir: String? = null) {
                         is Dest.Settings -> SettingsScreen(d.page, { go(Dest.Settings(it)) }) { back() }
                     }
                 }
-                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, Modifier.align(Alignment.BottomCenter))
+                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, { nav(Dest.Search("")) }, { scope.launch { ds.open() } }, Modifier.align(Alignment.CenterEnd))
             }
         }
         }
+        }
+    }
+}
+
+@Composable
+fun CrashScreen(text: String, onDone: () -> Unit) {
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.statusBarsPadding().padding(16.dp)) {
+                Text("FilesHub crashed last time", fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text(text.take(3500), fontSize = 10.sp, lineHeight = 13.sp, modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(vertical = 8.dp))
+                Button(onDone) { Text("Continue") }
+            }
         }
     }
 }

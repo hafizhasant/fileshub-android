@@ -1,6 +1,8 @@
 package org.fileshub.app
 
 import android.content.Context
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import kotlinx.coroutines.delay
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -85,18 +87,22 @@ fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
 }
 
 @Composable
-fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, mod: Modifier) {
+fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, onSearch: () -> Unit, onMenu: () -> Unit, mod: Modifier) {
     val pri = MaterialTheme.colorScheme.primary
-    val off = MaterialTheme.colorScheme.onSurface.copy(.8f)
-    Row(mod.navigationBarsPadding().padding(bottom = 10.dp).blurBar(CircleShape).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(Triple("Home", Icons.Rounded.Home, top is Dest.Home) to onHome, Triple("Browse", Icons.Rounded.Folder, top is Dest.Browse) to onBrowse).forEach { (t, click) ->
-            val (label, icon, on) = t
-            Column(
-                Modifier.clip(CircleShape).background(if (on) pri.copy(.2f) else Color.Transparent).clickable { click() }.padding(horizontal = 24.dp, vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Icon(icon, null, tint = if (on) pri else off)
-                Text(label, fontSize = 12.sp, color = if (on) pri else off, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+    val off = MaterialTheme.colorScheme.onSurface
+    Column(
+        mod.navigationBarsPadding().padding(end = 10.dp).blurBar(CircleShape).padding(vertical = 8.dp, horizontal = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp), horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        listOf(
+            Triple(Icons.Rounded.Home, "Home", top is Dest.Home) to onHome,
+            Triple(Icons.Rounded.Folder, "Browse", top is Dest.Browse) to onBrowse,
+            Triple(Icons.Rounded.Search, "Search", top is Dest.Search) to onSearch,
+            Triple(Icons.Rounded.Menu, "Menu", false) to onMenu
+        ).forEach { (t, click) ->
+            val (icon, label, on) = t
+            IconButton(click, Modifier.size(48.dp).clip(CircleShape).background(if (on) Color.White.copy(.14f) else Color.Transparent)) {
+                Icon(icon, label, tint = if (on) pri else off)
             }
         }
     }
@@ -554,6 +560,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     var q by remember(dir) { mutableStateOf("") }
     var sheet by remember { mutableStateOf<File?>(null) }
     var menuFor by remember { mutableStateOf<File?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
     var pw by remember { mutableStateOf<Pair<File, Boolean>?>(null) }
     val view = LocalView.current
     var confirm by remember { mutableStateOf<List<File>?>(null) }
@@ -653,6 +660,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
             PathBar(dir, onJump)
             if (list.isEmpty()) Text(if (local) "Nothing here" else "Nothing here, or root access is needed. Allow FilesHub in your root manager.", modifier = Modifier.padding(24.dp).alpha(.6f))
+            PullToRefreshBox(refreshing, { scope.launch { refreshing = true; bump(); delay(600); refreshing = false } }, Modifier.fillMaxSize()) {
             if (m.view == "grid" || m.view == "gallery") {
                 val gal = m.view == "gallery"
                 val min = if (gal) 140 + 80 * m.zoom else 72 + 36 * m.zoom
@@ -675,6 +683,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                 items(rows) { r ->
                     if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); itemMenu(r) }
                 }
+            }
             }
         }
         if (selecting) {
