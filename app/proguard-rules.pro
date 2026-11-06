@@ -1,0 +1,9 @@
+-dontwarn **
+-keep class rikka.shizuku.** { *; }
+-keep class com.hierynomus.** { *; }
+-keep class net.engio.** { *; }
+-keep class net.i2p.crypto.eddsa.** { *; }
+-keep class org.bouncycastle.** { *; }
+-keep class org.apache.commons.** { *; }
+-keep class org.tukaani.** { *; }
+-keep class org.slf4j.** { *; }

@@ -548,7 +548,7 @@ fun SelTopBar(count: Int, size: String, onClose: () -> Unit, onAll: () -> Unit, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit, onArchive: (File) -> Unit, onJump: (File) -> Unit) {
+fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File) -> Unit, onUp: () -> Unit, onMenu: () -> Unit, onArchive: (File) -> Unit, onJump: (File) -> Unit, onSearch: (String) -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var sel by remember(dir) { mutableStateOf(setOf<File>()) }
@@ -654,7 +654,10 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     }
                 }
             }
-            SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
+            SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp)) { if (q.isNotBlank()) onSearch(q) }
+            if (q.isNotBlank()) TextButton({ onSearch(q) }, Modifier.padding(horizontal = 8.dp)) {
+                Icon(Icons.Rounded.Search, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Search everywhere for “$q”")
+            }
             PathBar(dir, onJump)
             if (listN != null && list.isEmpty()) { if (local) Text("Nothing here", modifier = Modifier.padding(24.dp).alpha(.6f)) else RestrictedBox { bump() } }
             PullToRefreshBox(refreshing, { scope.launch { refreshing = true; bump(); delay(600); refreshing = false } }, Modifier.fillMaxSize()) {
@@ -666,8 +669,8 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     horizontalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp), verticalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp)
                 ) {
                     rows.forEach { r ->
-                        if (r is String) item(span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
-                        else if (r is File) item {
+                        if (r is String) item(key = "h:$r", span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
+                        else if (r is File) item(key = r.path) {
                             Box {
                                 if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
                                 else GridTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
@@ -677,7 +680,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad)) {
-                items(rows) { r ->
+                items(rows, key = { if (it is File) it.path else "h:$it" }, contentType = { if (it is File) 1 else 0 }) { r ->
                     if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); if (menuFor == r) itemMenu(r) }
                 }
             }
@@ -690,7 +693,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             if (!expanded) {
                 FloatingActionButton({ expanded = true }, Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 24.dp), containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Rounded.Apps, "Actions") }
             } else Column(
-                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 24.dp).blurBar(CircleShape, false).padding(vertical = 6.dp, horizontal = 4.dp),
+                Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 12.dp, bottom = 24.dp).glass(shape = CircleShape).padding(vertical = 6.dp, horizontal = 4.dp),
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
                 if (S.actionFab) IconButton({ expanded = false }) { Icon(Icons.Rounded.Close, "Collapse") }
