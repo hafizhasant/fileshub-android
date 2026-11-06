@@ -207,7 +207,7 @@ fun App(tick: Int, startDir: String? = null) {
                             Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }, { go(Dest.Analyzer) }) { go(Dest.Category(it)) }
                         }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
-                        is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) })
+                        is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) }, { go(Dest.Search(it)) })
                         is Dest.Archive -> ArchiveScreen(d.f) { back() }
                         is Dest.Analyzer -> AnalyzerScreen(scan, { back() }) { go(Dest.Browse(it)) }
                         is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
@@ -254,7 +254,7 @@ fun Perm() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name: String = f.name, menu: (@Composable () -> Unit)? = null) {
+fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name: String = f.name, menu: (@Composable () -> Unit)? = null, where: String? = null) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(if (sel) MaterialTheme.colorScheme.primary.copy(.22f) else Color.Transparent)
@@ -265,6 +265,7 @@ fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
+            if (where != null) Text(where, fontSize = 11.sp, color = LocalContentColor.current.copy(alpha = .6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Row(Modifier.fillMaxWidth()) {
                 Text(sizeText(f), fontSize = 12.sp, color = LocalContentColor.current.copy(alpha = .6f), modifier = Modifier.weight(1f))
                 Text(dateText(f), fontSize = 12.sp, color = LocalContentColor.current.copy(alpha = .6f))

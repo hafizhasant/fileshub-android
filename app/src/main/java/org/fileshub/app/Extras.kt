@@ -72,6 +72,11 @@ object S {
     var recentOpen by mutableStateOf(true)
     var actionFab by mutableStateOf(false)
     var accent by mutableStateOf(0)
+    var thumbImg by mutableStateOf(true)
+    var thumbVid by mutableStateOf(true)
+    var thumbPdf by mutableStateOf(true)
+    var thumbApk by mutableStateOf(true)
+    var thumbAud by mutableStateOf(true)
     fun load(c: Context) {
         val s = c.getSharedPreferences("fileshub", 0); p = s
         if (!s.getBoolean("d4", false)) s.edit().putString("vw", "compact").putString("sort", "date").putBoolean("asc", false).putBoolean("d4", true).apply()
@@ -81,12 +86,13 @@ object S {
         haptics = s.getBoolean("hp", true); glass = s.getBoolean("gl", true); homeStyle = s.getInt("hs", 0)
         view = s.getString("vw", "list") ?: "list"; asc = s.getBoolean("asc", true); zoom = s.getFloat("zm", 0.5f)
         sections = s.getBoolean("sec", true); catsOpen = s.getBoolean("co", true); recentOpen = s.getBoolean("ro", true); actionFab = s.getBoolean("afab", false); accent = s.getInt("acc", 0)
+        thumbImg = s.getBoolean("t1", true); thumbVid = s.getBoolean("t2", true); thumbPdf = s.getBoolean("t3", true); thumbApk = s.getBoolean("t4", true); thumbAud = s.getBoolean("t5", true)
     }
     fun save() {
         p?.edit()?.putBoolean("dark", dark)?.putBoolean("hidden", hidden)?.putBoolean("ff", foldersFirst)?.putString("sort", sort)
             ?.putBoolean("sb", startBrowse)?.putBoolean("cd", confirmDel)?.putBoolean("ub", useBin)
             ?.putBoolean("hp", haptics)?.putBoolean("gl", glass)?.putInt("hs", homeStyle)?.putString("vw", view)
-            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.putBoolean("afab", actionFab)?.putInt("acc", accent)?.apply()
+            ?.putBoolean("asc", asc)?.putFloat("zm", zoom)?.putBoolean("sec", sections)?.putBoolean("co", catsOpen)?.putBoolean("ro", recentOpen)?.putBoolean("afab", actionFab)?.putInt("acc", accent)?.putBoolean("t1", thumbImg)?.putBoolean("t2", thumbVid)?.putBoolean("t3", thumbPdf)?.putBoolean("t4", thumbApk)?.putBoolean("t5", thumbAud)?.apply()
     }
 }
 
@@ -160,7 +166,7 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
         if (list == null) Text("Searching…", Modifier.padding(24.dp).alpha(.6f))
         else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
-            items(list, key = { it.path }) { f -> FileRow(f, false, { if (f.isDirectory) onDir(f) else open(ctx, f) }, {}) }
+            items(list, key = { it.path }) { f -> FileRow(f, false, { if (f.isDirectory) onDir(f) else open(ctx, f) }, {}, where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" }) }
         }
     }
 }
@@ -184,7 +190,13 @@ fun sections() = listOf(
         Opt("Default view", { S.view }, { S.view = when (S.view) { "list" -> "grid"; "grid" -> "gallery"; "gallery" -> "compact"; else -> "list" }; S.save() }),
         Opt("Default sort", { S.sort }, { S.sort = when (S.sort) { "name" -> "date"; "date" -> "size"; "size" -> "type"; else -> "name" }; S.asc = S.sort == "name" || S.sort == "type"; S.save() }),
         sw("Folders first", { S.foldersFirst }, { S.foldersFirst = it }))),
-    Sec("Media Preferences", "Album view and thumbnails", Icons.Rounded.PermMedia, emptyList()),
+    Sec("Media Preferences", "Thumbnails and previews", Icons.Rounded.PermMedia, listOf(
+        sw("Image thumbnails", { S.thumbImg }, { S.thumbImg = it }),
+        sw("Video thumbnails", { S.thumbVid }, { S.thumbVid = it }),
+        sw("PDF page previews", { S.thumbPdf }, { S.thumbPdf = it }),
+        sw("App icons for APK files", { S.thumbApk }, { S.thumbApk = it }),
+        sw("Audio cover art", { S.thumbAud }, { S.thumbAud = it }),
+        Opt("Clear thumbnail cache", { "Tap to clear" }, { thumbs.evictAll() }))),
     Sec("File Actions & Viewers", "Confirmations when changing files", Icons.Rounded.Tune, listOf(
         sw("Collapse actions into a button", { S.actionFab }, { S.actionFab = it }),
         sw("Confirm before deleting", { S.confirmDel }, { S.confirmDel = it }))),
@@ -273,7 +285,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.6.1", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.7.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }

@@ -53,7 +53,21 @@ fun rootList(dir: File): List<File>? = runCatching {
 
 // ---------- thumbnails ----------
 val THUMB_EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "mp4", "mkv", "mov", "avi", "webm", "3gp", "pdf", "apk", "mp3", "flac", "m4a", "ogg", "opus", "wav", "aac")
-fun hasThumb(f: File) = f.isFile && f !is RootFile && f.extension.lowercase() in THUMB_EXT
+val IMG_EXT = setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "heic")
+val VID_EXT = setOf("mp4", "mkv", "mov", "avi", "webm", "3gp")
+val AUD_EXT = setOf("mp3", "flac", "m4a", "ogg", "opus", "wav", "aac")
+fun hasThumb(f: File): Boolean {
+    if (!f.isFile || f is RootFile) return false
+    val e = f.extension.lowercase()
+    return when {
+        e in IMG_EXT -> S.thumbImg
+        e in VID_EXT -> S.thumbVid
+        e == "pdf" -> S.thumbPdf
+        e == "apk" -> S.thumbApk
+        e in AUD_EXT -> S.thumbAud
+        else -> false
+    }
+}
 
 fun pdfThumb(f: File): ImageBitmap? {
     ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
