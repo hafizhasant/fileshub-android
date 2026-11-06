@@ -72,7 +72,7 @@ fun Modifier.glass(r: Dp = 24.dp, shape: Shape = RoundedCornerShape(r)): Modifie
 fun bgBrush(): Brush = if (S.dark) Brush.verticalGradient(listOf(Color(0xFF151515), Color(0xFF151515)))
 else Brush.verticalGradient(listOf(Color(0xFFF2F4F6), Color(0xFFF2F4F6)))
 
-object UiState { var hideNav by mutableStateOf(false) }
+object UiState { var hideNav by mutableStateOf(false); var backGuard = 0L }
 
 @Composable
 fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
@@ -82,19 +82,20 @@ fun Modifier.blurBar(shape: Shape, blur: Boolean = true): Modifier {
 }
 
 @Composable
-fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, onSearch: () -> Unit, onMenu: () -> Unit, mod: Modifier) {
+fun FloatingNav(top: Dest, onHome: () -> Unit, onBrowse: () -> Unit, onSearch: () -> Unit, onRefresh: () -> Unit, onMenu: () -> Unit, mod: Modifier) {
     val pri = MaterialTheme.colorScheme.primary
     val off = MaterialTheme.colorScheme.onSurface.copy(.8f)
-    Row(mod.navigationBarsPadding().padding(bottom = 10.dp).blurBar(CircleShape).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+    Row(mod.navigationBarsPadding().padding(bottom = 10.dp).blurBar(CircleShape).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(0.dp)) {
         listOf(
             Triple(Icons.Rounded.Home, "Home", top is Dest.Home) to onHome,
             Triple(Icons.Rounded.Folder, "Browse", top is Dest.Browse) to onBrowse,
             Triple(Icons.Rounded.Search, "Search", top is Dest.Search) to onSearch,
+            Triple(Icons.Rounded.Refresh, "Refresh", false) to onRefresh,
             Triple(Icons.Rounded.Menu, "Menu", false) to onMenu
         ).forEach { (t, click) ->
             val (icon, label, on) = t
             Column(
-                Modifier.clip(CircleShape).background(if (on) pri.copy(.2f) else Color.Transparent).clickable { click() }.padding(horizontal = 18.dp, vertical = 8.dp),
+                Modifier.clip(CircleShape).background(if (on) pri.copy(.2f) else Color.Transparent).clickable { click() }.padding(horizontal = 13.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Icon(icon, label, tint = if (on) pri else off)
@@ -580,6 +581,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
     fun setM(n: VM, save: Boolean) { m = n; if (save) saveVm(dir, n, only) }
     fun exit() { sel = emptySet(); selMode = false }
+    BackHandler(enabled = selecting) { exit(); UiState.backGuard = System.currentTimeMillis() + 2500 }
     fun toggle(f: File) { sel = if (f in sel) sel - f else sel + f }
     fun tap(f: File) { if (selecting) toggle(f) else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
     fun hold(f: File) {
@@ -880,6 +882,16 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
         if (S.homeStyle == 2) (ROOT.listFiles()?.filter { it.isDirectory && !it.name.startsWith(".") }?.sortedBy { it.name.lowercase() } ?: emptyList()) else emptyList()
     }
     fun count(c: Cat) = scan?.counts?.get(c)?.toString() ?: "…"
+    var delFor by remember { mutableStateOf<File?>(null) }
+    delFor?.let { f ->
+        AlertDialog(
+            onDismissRequest = { delFor = null },
+            title = { Text(if (S.useBin) "Move to bin?" else "Delete permanently?") },
+            text = { Text(f.name) },
+            confirmButton = { TextButton({ delFor = null; doDelete(ctx, listOf(f)); onRefresh() }) { Text("Delete") } },
+            dismissButton = { TextButton({ delFor = null }) { Text("Cancel") } }
+        )
+    }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp, 20.dp, 20.dp, 110.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -963,6 +975,18 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
             }
         }
         item { SectionHeader("Recent Files", S.recentOpen) { S.recentOpen = !S.recentOpen; S.save() } }
-        if (S.recentOpen) items(scan?.recent ?: emptyList()) { f -> FileRow(f, false, { open(ctx, f) }, {}) }
+        if (S.recentOpen) items(scan?.recent ?: emptyList()) { f ->
+            var mm by remember(f) { mutableStateOf(false) }
+            FileRow(f, false, { open(ctx, f) }, {}, menu = {
+                Box {
+                    IconButton({ mm = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    if (mm) DropdownMenu(true, { mm = false }) {
+                        DropdownMenuItem(text = { Text("Open file location") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { mm = false; onFolder(f.parentFile ?: ROOT) })
+                        DropdownMenuItem(text = { Text("Share") }, leadingIcon = { Icon(Icons.Rounded.Share, null) }, onClick = { mm = false; share(ctx, f) })
+                        DropdownMenuItem(text = { Text("Delete") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { mm = false; delFor = f })
+                    }
+                }
+            })
+        }
     }
 }
