@@ -182,7 +182,9 @@ fun App(tick: Int, startDir: String? = null) {
         stack = if (d is Dest.Home || (d is Dest.Browse && d.dir == ROOT)) listOf(d) else listOf(Dest.Home, d)
         scope.launch { ds.close() }
     }
-    BackHandler(enabled = stack.size > 1) { back() }
+    BackHandler(enabled = stack.size > 1) {
+        if (System.currentTimeMillis() < UiState.backGuard) { UiState.backGuard = 0L; toast(ctx, "Swipe back again to go up a folder") } else back()
+    }
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
     var refreshing by remember { mutableStateOf(false) }
@@ -215,7 +217,7 @@ fun App(tick: Int, startDir: String? = null) {
                         is Dest.Settings -> SettingsScreen(d.page, { go(Dest.Settings(it)) }) { back() }
                     }
                 }
-                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, { nav(Dest.Search("")) }, { scope.launch { ds.open() } }, Modifier.align(Alignment.BottomCenter))
+                if (!UiState.hideNav) FloatingNav(top, { nav(Dest.Home) }, { nav(Dest.Browse(ROOT)) }, { nav(Dest.Search("")) }, { rev++ }, { scope.launch { ds.open() } }, Modifier.align(Alignment.BottomCenter))
             }
         }
         }
@@ -252,7 +254,7 @@ fun Perm() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name: String = f.name) {
+fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name: String = f.name, menu: (@Composable () -> Unit)? = null) {
     Row(
         Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
             .background(if (sel) MaterialTheme.colorScheme.primary.copy(.22f) else Color.Transparent)
@@ -268,6 +270,7 @@ fun FileRow(f: File, sel: Boolean, onClick: () -> Unit, onLong: () -> Unit, name
                 Text(dateText(f), fontSize = 12.sp, color = LocalContentColor.current.copy(alpha = .6f))
             }
         }
+        menu?.invoke()
     }
 }
 
