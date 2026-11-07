@@ -587,7 +587,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
     fun tap(f: File) { if (selecting) toggle(f) else if (f.isDirectory) onEnter(f) else if (isArchive(f)) onArchive(f) else open(ctx, f) }
     fun hold(f: File) {
         if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-        if (selecting) toggle(f) else { selMode = true; sel = setOf(f); menuFor = f }
+        if (selecting) toggle(f) else { selMode = true; sel = setOf(f) }
     }
     fun del(l: List<File>) { doDelete(ctx, l); exit(); bump() }
     fun askDel(l: List<File>) { if (S.confirmDel) confirm = l else del(l) }
@@ -710,6 +710,8 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                         if (one && first != null && isArchive(first)) DropdownMenuItem(text = { Text("Extract") }, leadingIcon = { Icon(Icons.Rounded.Unarchive, null) }, onClick = { bmore = false; extractIt(first) })
                         if (one && first != null && first.isFile) DropdownMenuItem(text = { Text("Open with…") }, leadingIcon = { Icon(Icons.Rounded.Apps, null) }, onClick = { bmore = false; openWith(ctx, first) })
                         if (one && first != null && first.isDirectory) DropdownMenuItem(text = { Text("Open directory") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { bmore = false; exit(); onEnter(first) })
+                        if (one && first != null && first.isFile) DropdownMenuItem(text = { Text(if (first.extension.equals("fhe", true)) "Decrypt" else "Encrypt") }, leadingIcon = { Icon(Icons.Rounded.Lock, null) }, onClick = { bmore = false; pw = first to !first.extension.equals("fhe", true) })
+                        if (one && first != null) DropdownMenuItem(text = { Text("Create shortcut") }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) }, onClick = { bmore = false; pinShortcut(ctx, first) })
                         DropdownMenuItem(text = { Text("Properties") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, enabled = sel.isNotEmpty(), onClick = { bmore = false; info = sel.toList() })
                     }
                 }
