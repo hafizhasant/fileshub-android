@@ -136,6 +136,14 @@ class MainActivity : ComponentActivity() {
             if (best != null) window.attributes = window.attributes.also { it.preferredRefreshRate = best.refreshRate }
         }
         runCatching { val old = File(ROOT, ".cairn-bin"); if (old.exists() && !BIN.exists()) old.renameTo(BIN) }
+        Vols.refresh(this)
+        volRx = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) { Vols.refresh(c) }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(this, volRx, android.content.IntentFilter().apply {
+            addAction(Intent.ACTION_MEDIA_MOUNTED); addAction(Intent.ACTION_MEDIA_UNMOUNTED); addAction(Intent.ACTION_MEDIA_REMOVED)
+            addAction(Intent.ACTION_MEDIA_EJECT); addAction(Intent.ACTION_MEDIA_BAD_REMOVAL); addDataScheme("file")
+        }, androidx.core.content.ContextCompat.RECEIVER_EXPORTED)
         val crash = File(filesDir, "crash.txt")
         Thread.setDefaultUncaughtExceptionHandler { _, e ->
             runCatching { crash.writeText(e.stackTraceToString()) }
@@ -148,7 +156,9 @@ class MainActivity : ComponentActivity() {
             if (t != null) CrashScreen(t) { crash.delete(); shown = null } else App(tick.intValue, intent?.getStringExtra("path"))
         }
     }
-    override fun onResume() { super.onResume(); tick.intValue++ }
+    private var volRx: android.content.BroadcastReceiver? = null
+    override fun onResume() { super.onResume(); Vols.refresh(this); tick.intValue++ }
+    override fun onDestroy() { volRx?.let { runCatching { unregisterReceiver(it) } }; super.onDestroy() }
 
     private var dx = 0f
     private var dy = 0f

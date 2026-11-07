@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -631,7 +632,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
             if (selecting) {
                 SelTopBar(sel.size, fmt(sel.filter { it.isFile }.sumOf { it.length() }), { exit() }, { sel = list.toSet() }, { sel = list.toSet() - sel })
             } else {
-                TopRow(if (dir == ROOT) "Internal storage" else dir.name.ifEmpty { "/" }, if (canUp) onUp else onMenu,
+                TopRow(if (dir == ROOT) "Internal storage" else (Vols.list.firstOrNull { it.dir == dir }?.name ?: dir.name.ifEmpty { "/" }), if (canUp) onUp else onMenu,
                     if (canUp) Icons.AutoMirrored.Rounded.ArrowBack else Icons.Rounded.Menu) {
                     if (Clip.files.isNotEmpty()) IconButton({ paste() }) { Icon(Icons.Rounded.ContentPaste, "Paste") }
                     Box {
@@ -668,8 +669,8 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     GridCells.Adaptive(min.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad),
                     horizontalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp), verticalArrangement = Arrangement.spacedBy(if (gal) 8.dp else 4.dp)
                 ) {
-                    rows.forEach { r ->
-                        if (r is String) item(key = "h:$r", span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
+                    rows.forEachIndexed { i, r ->
+                        if (r is String) item(key = "h$i", span = { GridItemSpan(maxLineSpan) }) { SecHeader(r) }
                         else if (r is File) item(key = r.path) {
                             Box {
                                 if (gal) GalleryTile(r, r in sel, selecting, { tap(r) }, { hold(r) })
@@ -680,7 +681,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                     }
                 }
             } else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp, 4.dp, 12.dp, bottomPad)) {
-                items(rows, key = { if (it is File) it.path else "h:$it" }, contentType = { if (it is File) 1 else 0 }) { r ->
+                itemsIndexed(rows, key = { i, it -> if (it is File) it.path else "h$i" }, contentType = { _, it -> if (it is File) 1 else 0 }) { _, r ->
                     if (r is String) SecHeader(r) else if (r is File) Box { BrowseRow(r, r in sel, m, selecting, { tap(r) }, { hold(r) }); if (menuFor == r) itemMenu(r) }
                 }
             }
@@ -922,6 +923,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
                         }
                     }
                 }
+                otgItems(onFolder)
                 item { SectionHeader("Categories", S.catsOpen) { S.catsOpen = !S.catsOpen; S.save() } }
                 if (S.catsOpen) item {
                     Column(Modifier.fillMaxWidth().glass(24.dp).padding(8.dp)) {
@@ -951,6 +953,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
                         Text("${fmt(free)} free", fontSize = 12.sp, modifier = Modifier.alpha(.6f))
                     }
                 }
+                otgItems(onFolder)
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         items(Cat.entries) { c -> CatTile(c, count(c), Modifier.width(78.dp)) { onCat(c) } }
@@ -968,6 +971,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
             }
             else -> {
                 item { StorageCard(used, free, total, false, Modifier.fillMaxWidth(), onAnalyze) { onFolder(ROOT) } }
+                otgItems(onFolder)
                 item { SectionHeader("Quick Categories", S.catsOpen) { S.catsOpen = !S.catsOpen; S.save() } }
                 if (S.catsOpen) items(Cat.entries.chunked(4)) { row ->
                     Row(Modifier.fillMaxWidth()) {

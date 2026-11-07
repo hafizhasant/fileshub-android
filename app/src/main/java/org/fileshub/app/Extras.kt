@@ -270,6 +270,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
             Spacer(Modifier.height(8.dp))
             DrawerItem("Home", Icons.Rounded.Home, top is Dest.Home) { nav(Dest.Home) }
             DrawerItem("Internal Storage", Icons.Rounded.FolderOpen, (top as? Dest.Browse)?.dir == ROOT) { nav(Dest.Browse(ROOT)) }
+            Vols.list.forEach { v -> DrawerItem(v.name, Icons.Rounded.Usb, (top as? Dest.Browse)?.dir == v.dir) { nav(Dest.Browse(v.dir)) } }
             DrawerItem("System Root", Icons.Rounded.Storage, (top as? Dest.Browse)?.dir?.path == "/") { nav(Dest.Browse(File("/"))) }
             DrawerItem("Global Search", Icons.Rounded.Search, top is Dest.Search) { nav(Dest.Search("")) }
             DrawerItem("Recycle Bin", Icons.Rounded.Delete, top is Dest.Bin) { nav(Dest.Bin) }
@@ -285,7 +286,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.7.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.7.1", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
