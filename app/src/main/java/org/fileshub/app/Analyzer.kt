@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -123,4 +124,33 @@ fun RestrictedBox(onRetry: () -> Unit) {
             TextButton(onRetry) { Text("Retry") }
         }
     }
+}
+
+@Composable
+fun OtgCard(v: Vol, onClick: () -> Unit) {
+    val pri = MaterialTheme.colorScheme.primary
+    val dim = MaterialTheme.colorScheme.onSurface.copy(alpha = .6f)
+    val st = remember(v.dir) { runCatching { StatFs(v.dir.path) }.getOrNull() }
+    val total = st?.totalBytes ?: 0L
+    val free = st?.availableBytes ?: 0L
+    Column(Modifier.fillMaxWidth().glass(24.dp).clickable { onClick() }.padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(pri.copy(.18f)), contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Usb, null, tint = pri) }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(v.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(v.dir.path, fontSize = 12.sp, color = dim, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (total > 0) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator({ (1f - free.toFloat() / total).coerceIn(0f, 1f) }, Modifier.fillMaxWidth().height(6.dp).clip(CircleShape))
+            Spacer(Modifier.height(6.dp))
+            Text("${fmt(free)} free of ${fmt(total)}", fontSize = 12.sp, color = dim)
+        }
+    }
+}
+
+fun LazyListScope.otgItems(onFolder: (File) -> Unit) {
+    items(Vols.list) { v -> OtgCard(v) { onFolder(v.dir) } }
 }

@@ -214,6 +214,20 @@ fun runShell(cmd: String): List<String>? {
     }.getOrNull()
 }
 
-fun isRestricted(d: File) = !d.path.startsWith(ROOT.path) || d.path.contains("/Android/data") || d.path.contains("/Android/obb")
+fun isRestricted(d: File) = (!d.path.startsWith(ROOT.path) && Vols.list.none { d.path.startsWith(it.dir.path) }) || d.path.contains("/Android/data") || d.path.contains("/Android/obb")
 
 val thumbSem = kotlinx.coroutines.sync.Semaphore(3)
+
+// ---------- OTG / removable storage ----------
+class Vol(val name: String, val dir: File)
+
+object Vols {
+    var list by mutableStateOf(listOf<Vol>())
+    fun refresh(c: Context) {
+        list = runCatching {
+            val sm = c.getSystemService(Context.STORAGE_SERVICE) as android.os.storage.StorageManager
+            sm.storageVolumes.filter { !it.isPrimary && it.isRemovable && it.state == android.os.Environment.MEDIA_MOUNTED }
+                .mapNotNull { v -> v.directory?.let { Vol(v.getDescription(c), it) } }
+        }.getOrDefault(emptyList())
+    }
+}
