@@ -50,6 +50,7 @@ sealed interface Dest {
     class Settings(val page: Int) : Dest
     class Archive(val f: File) : Dest
     object Analyzer : Dest
+    object Transfer : Dest
 }
 
 object S {
@@ -276,6 +277,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
             DrawerItem("Recycle Bin", Icons.Rounded.Delete, top is Dest.Bin) { nav(Dest.Bin) }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Servers & tools", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = pri, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            DrawerItem("Transfer", Icons.Rounded.Share, top is Dest.Transfer) { nav(Dest.Transfer) }
             DrawerItem("FTP & SMB servers", Icons.Rounded.Cloud, top is Dest.Remotes || top is Dest.Net) { nav(Dest.Remotes) }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Customization & settings", Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = pri, fontWeight = FontWeight.Bold, fontSize = 13.sp)
@@ -286,7 +288,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.7.2", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.8.0", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }

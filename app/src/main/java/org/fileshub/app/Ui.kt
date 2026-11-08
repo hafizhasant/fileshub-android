@@ -712,6 +712,7 @@ fun Browse(dir: File, canUp: Boolean, rev: Int, bump: () -> Unit, onEnter: (File
                         if (one && first != null && first.isDirectory) DropdownMenuItem(text = { Text("Open directory") }, leadingIcon = { Icon(Icons.Rounded.FolderOpen, null) }, onClick = { bmore = false; exit(); onEnter(first) })
                         if (one && first != null && first.isFile) DropdownMenuItem(text = { Text(if (first.extension.equals("fhe", true)) "Decrypt" else "Encrypt") }, leadingIcon = { Icon(Icons.Rounded.Lock, null) }, onClick = { bmore = false; pw = first to !first.extension.equals("fhe", true) })
                         if (one && first != null) DropdownMenuItem(text = { Text("Create shortcut") }, leadingIcon = { Icon(Icons.Rounded.PushPin, null) }, onClick = { bmore = false; pinShortcut(ctx, first) })
+                        DropdownMenuItem(text = { Text("Transfer") }, leadingIcon = { Icon(Icons.Rounded.Share, null) }, enabled = sel.any { it.isFile }, onClick = { bmore = false; TransferServer.addFiles(sel.filter { it.isFile }); TransferState.open = true; exit() })
                         DropdownMenuItem(text = { Text("Properties") }, leadingIcon = { Icon(Icons.Rounded.Info, null) }, enabled = sel.isNotEmpty(), onClick = { bmore = false; info = sel.toList() })
                     }
                 }
@@ -877,7 +878,7 @@ fun Donut(used: Float, mod: Modifier) {
 }
 
 @Composable
-fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onFolder: (File) -> Unit, onAnalyze: () -> Unit, onCat: (Cat) -> Unit) {
+fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (String) -> Unit, onFolder: (File) -> Unit, onAnalyze: () -> Unit, onTransfer: () -> Unit, onCat: (Cat) -> Unit) {
     val ctx = LocalContext.current
     val st = remember { StatFs(ROOT.path) }
     val total = st.totalBytes; val free = st.availableBytes
@@ -925,6 +926,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
                         }
                     }
                 }
+                transferItem(onTransfer)
                 otgItems(onFolder)
                 item { SectionHeader("Categories", S.catsOpen) { S.catsOpen = !S.catsOpen; S.save() } }
                 if (S.catsOpen) item {
@@ -955,6 +957,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
                         Text("${fmt(free)} free", fontSize = 12.sp, modifier = Modifier.alpha(.6f))
                     }
                 }
+                transferItem(onTransfer)
                 otgItems(onFolder)
                 item {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -973,6 +976,7 @@ fun Home(scan: Scan?, onMenu: () -> Unit, onRefresh: () -> Unit, onSearch: (Stri
             }
             else -> {
                 item { StorageCard(used, free, total, false, Modifier.fillMaxWidth(), onAnalyze) { onFolder(ROOT) } }
+                transferItem(onTransfer)
                 otgItems(onFolder)
                 item { SectionHeader("Quick Categories", S.catsOpen) { S.catsOpen = !S.catsOpen; S.save() } }
                 if (S.catsOpen) items(Cat.entries.chunked(4)) { row ->

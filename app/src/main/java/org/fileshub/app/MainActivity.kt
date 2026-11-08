@@ -195,6 +195,7 @@ fun App(tick: Int, startDir: String? = null) {
     BackHandler(enabled = stack.size > 1) {
         if (System.currentTimeMillis() < UiState.backGuard) { UiState.backGuard = 0L; toast(ctx, "Swipe back again to go up a folder") } else back()
     }
+    LaunchedEffect(TransferState.open) { if (TransferState.open) { TransferState.open = false; go(Dest.Transfer) } }
     BackHandler(enabled = ds.isOpen) { scope.launch { ds.close() } }
     val top = stack.last()
     var refreshing by remember { mutableStateOf(false) }
@@ -214,12 +215,13 @@ fun App(tick: Int, startDir: String? = null) {
                 Box(Modifier.fillMaxSize().statusBarsPadding()) {
                     if (!granted) Perm() else when (val d = top) {
                         is Dest.Home -> PullToRefreshBox(refreshing, { scope.launch { refreshing = true; rev++; delay(700); refreshing = false } }, Modifier.fillMaxSize()) {
-                            Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }, { go(Dest.Analyzer) }) { go(Dest.Category(it)) }
+                            Home(scan, { scope.launch { ds.open() } }, { rev++ }, { go(Dest.Search(it)) }, { go(Dest.Browse(it)) }, { go(Dest.Analyzer) }, { go(Dest.Transfer) }) { go(Dest.Category(it)) }
                         }
                         is Dest.Category -> if (d.c == Cat.Bin) BinScreen(rev, { rev++ }) { back() } else CatScreen(d.c) { back() }
                         is Dest.Browse -> Browse(d.dir, stack.getOrNull(stack.size - 2) is Dest.Browse, rev, { rev++ }, { go(Dest.Browse(it)) }, { back() }, { scope.launch { ds.open() } }, { go(Dest.Archive(it)) }, { nav(Dest.Browse(it)) }, { go(Dest.Search(it)) })
                         is Dest.Archive -> ArchiveScreen(d.f) { back() }
                         is Dest.Analyzer -> AnalyzerScreen(scan, { back() }) { go(Dest.Browse(it)) }
+                        is Dest.Transfer -> TransferScreen({ back() }) { go(Dest.Browse(it)) }
                         is Dest.Bin -> BinScreen(rev, { rev++ }) { back() }
                         is Dest.Search -> SearchScreen(d.q, { back() }) { go(Dest.Browse(it)) }
                         is Dest.Remotes -> ServersScreen({ back() }) { go(Dest.Net(it)) }
@@ -256,7 +258,7 @@ fun Perm() {
         Spacer(Modifier.height(16.dp))
         Text("Allow access to all files", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("FilesHub needs this to browse and manage your storage. FilesHub only uses the network when you open an FTP or SMB server that you added yourself.", textAlign = TextAlign.Center, modifier = Modifier.alpha(.7f))
+        Text("FilesHub needs this to browse and manage your storage. FilesHub only uses the network when you open an FTP or SMB server that you added yourself, or when you turn on Transfer.", textAlign = TextAlign.Center, modifier = Modifier.alpha(.7f))
         Spacer(Modifier.height(24.dp))
         Button({ ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${ctx.packageName}"))) }) { Text("Open settings") }
     }
