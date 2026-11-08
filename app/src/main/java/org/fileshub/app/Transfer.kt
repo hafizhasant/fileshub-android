@@ -6,6 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -132,6 +134,23 @@ fun TransferScreen(onBack: () -> Unit, onFolder: (File) -> Unit) {
                     Spacer(Modifier.height(10.dp))
                     Text(if (running) "Scan to connect" else "Turn sharing on to get a code", color = onPri, fontWeight = FontWeight.SemiBold)
                     if (running && url != null) Text(url, color = onPri.copy(alpha = .85f), fontSize = 12.sp, textAlign = TextAlign.Center)
+                }
+            }
+            if (running && url != null) item {
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Rounded.Link, null, tint = pri)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+                        Text("Share link", fontWeight = FontWeight.SemiBold)
+                        Text(url, fontSize = 12.sp, color = dim, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    IconButton({
+                        ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("FilesHub link", url))
+                        toast(ctx, "Link copied")
+                    }) { Icon(Icons.Rounded.ContentCopy, "Copy link") }
+                    IconButton({
+                        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), "Share link"))
+                    }) { Icon(Icons.Rounded.Share, "Send link") }
                 }
             }
             item {
