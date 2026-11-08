@@ -10,8 +10,8 @@ android {
         applicationId = "org.fileshub.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.7.2"
+        versionCode = 17
+        versionName = "0.8.0"
     }
     signingConfigs { getByName("debug") { storeFile = file("fileshub-debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes {
@@ -37,6 +37,7 @@ dependencies {
     implementation("commons-net:commons-net:3.11.1")
     implementation("dev.rikka.shizuku:api:13.1.5")
     implementation("dev.rikka.shizuku:provider:13.1.5")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("org.apache.commons:commons-compress:1.27.1")
     implementation("org.tukaani:xz:1.10")
     implementation("com.hierynomus:smbj:0.13.0")
