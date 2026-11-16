@@ -2,32 +2,9 @@ package org.fileshub.app
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.content.pm.ResolveInfo
-import android.net.Uri
-import android.os.HapticFeedbackConstants
+import android.content.SharedPreferences
 import android.webkit.MimeTypeMap
 import android.widget.Toast
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -136,46 +113,6 @@ fun openWith(ctx: Context, f: File) {
     ctx.startActivity(Intent.createChooser(i, "Open with"))
 }
 
-@Composable
-fun OpenWithDialog(f: File, onDismiss: () -> Unit) {
-    val ctx = LocalContext.current
-    val pm = ctx.packageManager
-    val view = LocalView.current
-    val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
-    val uri = uriOf(ctx, f)
-    val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-    val activities = pm.queryIntentActivities(intent, 0).filter { it.packageName != ctx.packageName }
-    AlertDialog(
-        onDismissRequest = { onDismiss() },
-        title = { Text("Open with") },
-        text = {
-            LazyColumn(Modifier.fillMaxSize()) {
-                if (activities.isEmpty()) {
-                    item { Text("No apps can open this file", Modifier.padding(vertical = 48.dp)) }
-                } else {
-                    items(activities) { resolveInfo ->
-                        val packageName = resolveInfo.packageName
-                        val label = remember(packageName) {
-                            try { pm.loadLabel(resolveInfo.loadLabel).toString() } catch (_: Exception) { packageName }
-                        }
-                        TextButton(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(24.dp))
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                                .onClick { ctx.startActivity(intent.setPackage(packageName)); onDismiss() },
-                            contentAlignment = Alignment.CenterStart
-                        ) {
-                            Text(label, fontSize = 15.sp)
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
 fun share(ctx: Context, f: File) {
     val i = Intent(Intent.ACTION_SEND).setType(mimeOf(f)).putExtra(Intent.EXTRA_STREAM, uriOf(ctx, f)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     ctx.startActivity(Intent.createChooser(i, "Share"))
@@ -213,12 +150,10 @@ fun SearchField(value: String, onChange: (String) -> Unit, mod: Modifier = Modif
 @Composable
 fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
     val ctx = LocalContext.current
-    val view = LocalView.current
     var q by remember { mutableStateOf(q0) }
     var removed by remember { mutableStateOf(setOf<String>()) }
     var menuFor by remember { mutableStateOf<File?>(null) }
     var confirmDel by remember { mutableStateOf<File?>(null) }
-    val openWithFor by remember { mutableStateOf<File?>(null) }
     val res by produceState<List<File>?>(null, q) {
         if (q.isBlank()) value = emptyList() else {
             value = null; delay(300)
@@ -239,11 +174,11 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
                 Box {
                     FileRow(f, false,
                         { if (f.isDirectory) onDir(f) else open(ctx, f) },
-                        { if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS); menuFor = f },
+                        { menuFor = f },
                         where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
                     DropdownMenu(expanded = menuFor == f, onDismissRequest = { menuFor = null }) {
                         DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
-                        if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWithFor = f })
+                        if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
                         if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
                         DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; confirmDel = f })
                     }
@@ -267,7 +202,6 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
             dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("Cancel") } }
         )
     }
-    openWithFor?.let { f -> OpenWithDialog(f) { openWithFor = null } }
 }
 
 class Opt(val title: String, val value: () -> String, val tap: () -> Unit, val sw: Boolean = false)
