@@ -18,6 +18,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -58,33 +60,39 @@ fun ImageViewer(file: File, onClose: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = (scale * zoom).coerceIn(1f, 5f)
-                    offset = if (scale > 1f) offset + pan else Offset.Zero
-                }
-            },
-        contentAlignment = Alignment.Center
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        when (val s = state) {
-            LoadState.Loading -> Text("Loading...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            LoadState.Failed -> Text("Can't open this image", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            is LoadState.Ready -> Image(
-                bitmap = s.bitmap.asImageBitmap(),
-                contentDescription = file.name,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        translationX = offset.x,
-                        translationY = offset.y
-                    )
-            )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black)
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        offset = if (scale > 1f) offset + pan else Offset.Zero
+                    }
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            when (val s = state) {
+                LoadState.Loading -> Text("Loading...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LoadState.Failed -> Text("Can't open this image", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is LoadState.Ready -> Image(
+                    bitmap = s.bitmap.asImageBitmap(),
+                    contentDescription = file.name,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = offset.y
+                        )
+                )
+            }
         }
     }
 
