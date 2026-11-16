@@ -104,6 +104,7 @@ fun sub(f: File) = sizeText(f) + " · " + dateText(f)
 fun open(ctx: Context, f: File) {
     if (f.isFile && f.extension.equals("apk", true)) { Pending.apk = f; return }
     if (f.isFile && f.extension.lowercase() in Images.exts) { Pending.image = f; return }
+    if (f.isFile && f.extension.lowercase() in TextFiles.exts) { Pending.text = f; return }
     try {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
@@ -210,6 +211,7 @@ fun App(tick: Int, startDir: String? = null) {
     MaterialTheme(colorScheme = scheme) {
         Pending.apk?.let { InstallDialog(it) { Pending.apk = null } }
         Pending.image?.let { ImageViewer(it) { Pending.image = null } }
+        Pending.text?.let { TextViewer(it) { Pending.text = null } }
         Box(Modifier.fillMaxSize().background(bgBrush())) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onBackground) {
         ModalNavigationDrawer(drawerState = ds, drawerContent = { DrawerContent(top) { nav(it) } }) {
