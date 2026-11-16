@@ -107,7 +107,7 @@ fun open(ctx: Context, f: File) {
     try {
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(f.extension.lowercase()) ?: "*/*"
-        ctx.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), "Open with"))
     } catch (e: Exception) {
         Toast.makeText(ctx, "No app can open this file", Toast.LENGTH_SHORT).show()
     }
