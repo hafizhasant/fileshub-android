@@ -72,9 +72,10 @@ fun TextViewer(file: File, onClose: () -> Unit) {
     var value by remember { mutableStateOf(TextFieldValue("")) }
     var menuOpen by remember { mutableStateOf(false) }
     var showDetails by remember { mutableStateOf(false) }
+    var showExitDialog by remember { mutableStateOf(false) }
     val truncated = remember(file) { file.length() > MAX_BYTES }
     val editable = loaded && !truncated
-    val dirty = value.text != original
+    val dirty = loaded && value.text != original
 
     LaunchedEffect(file) {
         val text = withContext(Dispatchers.IO) {
@@ -85,13 +86,21 @@ fun TextViewer(file: File, onClose: () -> Unit) {
         loaded = true
     }
 
+    // Writes the file; returns true only if the write succeeded.
+    suspend fun writeFile(): Boolean {
+        val text = value.text
+        val ok = withContext(Dispatchers.IO) { runCatching { file.writeText(text) }.isSuccess }
+        if (ok) original = text
+        return ok
+    }
+
     fun save() {
         if (!editable || !dirty) return
-        val text = value.text
-        scope.launch {
-            withContext(Dispatchers.IO) { file.writeText(text) }
-            original = text
-        }
+        scope.launch { writeFile() }
+    }
+
+    fun attemptClose() {
+        if (dirty) showExitDialog = true else onClose()
     }
 
     fun copySelection() {
@@ -113,7 +122,7 @@ fun TextViewer(file: File, onClose: () -> Unit) {
     }
 
     Dialog(
-        onDismissRequest = onClose,
+        onDismissRequest = { attemptClose() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Column(
@@ -123,13 +132,13 @@ fun TextViewer(file: File, onClose: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, contentDescription = "Close") }
+                    IconButton(onClick = { attemptClose() }) { Icon(Icons.Default.ArrowBack, contentDescription = "Close") }
                     Column(Modifier.weight(1f)) {
                         Text(file.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
@@ -159,7 +168,7 @@ fun TextViewer(file: File, onClose: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
             ) {
                 BasicTextField(
                     value = value,
@@ -180,6 +189,26 @@ fun TextViewer(file: File, onClose: () -> Unit) {
         }
     }
 
+    if (showExitDialog) {
+        AlertDialog(
+            onDismissRequest = { showExitDialog = false },
+            title = { Text("Unsaved changes") },
+            text = { Text("Save your changes to ${file.name} before closing?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showExitDialog = false
+                    scope.launch { if (writeFile()) onClose() }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { showExitDialog = false }) { Text("Cancel") }
+                    TextButton(onClick = { showExitDialog = false; onClose() }) { Text("Discard") }
+                }
+            }
+        )
+    }
+
     if (showDetails) {
         AlertDialog(
             onDismissRequest = { showDetails = false },
@@ -198,5 +227,5 @@ fun TextViewer(file: File, onClose: () -> Unit) {
         )
     }
 
-    BackHandler(onBack = onClose)
+    BackHandler { attemptClose() }
 }

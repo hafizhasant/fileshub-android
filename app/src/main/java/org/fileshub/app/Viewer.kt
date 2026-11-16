@@ -111,7 +111,7 @@ fun ImageViewer(file: File, onClose: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
@@ -139,7 +139,7 @@ fun ImageViewer(file: File, onClose: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
             ) {
                 Box(
                     Modifier
