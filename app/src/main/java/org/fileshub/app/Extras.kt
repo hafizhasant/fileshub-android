@@ -21,6 +21,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -171,12 +173,14 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
         else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
             items(list, key = { it.path }) { f ->
-                Box {
+                Box(Modifier.fillMaxWidth()) {
                     FileRow(f, false,
                         { if (f.isDirectory) onDir(f) else open(ctx, f) },
                         { menuFor = f },
                         where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
-                    DropdownMenu(expanded = menuFor == f, onDismissRequest = { menuFor = null }) {
+                }
+                Box(Modifier.align(Alignment.TopEnd).size(1.dp)) {
+                    DropdownMenu(expanded = menuFor == f, onDismissRequest = { menuFor = null }, offset = DpOffset(x = (-12).dp, y = 0.dp)) {
                         DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
                         if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
                         if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
