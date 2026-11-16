@@ -10,8 +10,8 @@ android {
         applicationId = "org.fileshub.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 19
-        versionName = "0.9.0"
+        versionCode = 20
+        versionName = "0.9.1"
     }
     signingConfigs { getByName("debug") { storeFile = file("fileshub-debug.keystore"); storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android" } }
     buildTypes {
