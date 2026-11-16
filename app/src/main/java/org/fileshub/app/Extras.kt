@@ -1,5 +1,8 @@
 package org.fileshub.app
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
+
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -152,6 +155,7 @@ fun SearchField(value: String, onChange: (String) -> Unit, mod: Modifier = Modif
 @Composable
 fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     var q by remember { mutableStateOf(q0) }
     var removed by remember { mutableStateOf(setOf<String>()) }
     var menuFor by remember { mutableStateOf<File?>(null) }
@@ -173,18 +177,25 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
         else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
             items(list, key = { it.path }) { f ->
-                Box(Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
                     FileRow(f, false,
                         { if (f.isDirectory) onDir(f) else open(ctx, f) },
-                        { menuFor = f },
+                        {
+                            if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            menuFor = f
+                        },
                         where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
-                }
-                Box(Modifier.align(Alignment.TopEnd).size(1.dp)) {
-                    DropdownMenu(expanded = menuFor == f, onDismissRequest = { menuFor = null }, offset = DpOffset(x = (-12).dp, y = 0.dp)) {
-                        DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
-                        if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
-                        if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
-                        DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; confirmDel = f })
+                    Box(Modifier.size(1.dp)) {
+                        DropdownMenu(
+                            expanded = menuFor == f,
+                            onDismissRequest = { menuFor = null },
+                            offset = DpOffset((-12).dp, 0.dp)
+                        ) {
+                            DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
+                            if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
+                            if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; confirmDel = f })
+                        }
                     }
                 }
             }
