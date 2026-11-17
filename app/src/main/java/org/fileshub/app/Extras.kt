@@ -159,7 +159,10 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
     var q by remember { mutableStateOf(q0) }
     var removed by remember { mutableStateOf(setOf<String>()) }
     var menuFor by remember { mutableStateOf<File?>(null) }
-    var confirmDel by remember { mutableStateOf<File?>(null) }
+    var confirmDel by remember { mutableStateOf<List<File>?>(null) }
+    var more by remember { mutableStateOf(false) }
+    var sel by remember(q0) { mutableStateOf(setOf<File>()) }
+    var selMode by remember(q0) { mutableStateOf(false) }
     val res by produceState<List<File>?>(null, q) {
         if (q.isBlank()) value = emptyList() else {
             value = null; delay(300)
@@ -170,50 +173,91 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
         }
     }
     val list = res?.filter { it.path !in removed }
-    Column(Modifier.fillMaxSize()) {
-        TopRow("Global search", onBack)
-        SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
-        if (list == null) Text("Searching…", Modifier.padding(24.dp).alpha(.6f))
-        else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
-        else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
-            items(list, key = { it.path }) { f ->
-                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
-                    FileRow(f, false,
-                        { if (f.isDirectory) onDir(f) else open(ctx, f) },
-                        {
-                            if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            menuFor = f
-                        },
-                        where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
-                    Box(Modifier.size(1.dp)) {
-                        DropdownMenu(
-                            expanded = menuFor == f,
-                            onDismissRequest = { menuFor = null },
-                            offset = DpOffset((-12).dp, 0.dp)
-                        ) {
-                            DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
-                            if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
-                            if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
-                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; confirmDel = f })
+    val selecting = selMode || sel.isNotEmpty()
+    DisposableEffect(selecting) { UiState.hideNav = selecting; onDispose { UiState.hideNav = false } }
+    fun exit() { sel = emptySet(); selMode = false; menuFor = null }
+    BackHandler(enabled = selecting) { exit(); UiState.backGuard = System.currentTimeMillis() + 2500 }
+    LaunchedEffect(q) { exit() }
+    fun toggle(f: File) { sel = if (f in sel) sel - f else sel + f }
+    fun tap(f: File) { if (selecting) toggle(f) else if (f.isDirectory) onDir(f) else open(ctx, f) }
+    fun hold(f: File) {
+        if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        menuFor = null
+        if (selecting) toggle(f) else { selMode = true; sel = setOf(f) }
+    }
+    fun del(l: List<File>) {
+        doDelete(ctx, l)
+        removed = removed + l.map { it.path }
+        toast(ctx, "Deleted ${l.size} item${if (l.size == 1) "" else "s"}")
+        exit()
+    }
+    fun askDel(l: List<File>) { if (S.confirmDel) confirmDel = l else del(l) }
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            if (selecting) SelTopBar(sel.size, fmt(sel.filter { it.isFile }.sumOf { it.length() }), { exit() }, { sel = list.orEmpty().toSet() }, { sel = list.orEmpty().toSet() - sel })
+            else TopRow("Global search", onBack)
+            SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
+            if (list == null) Text("Searching…", Modifier.padding(24.dp).alpha(.6f))
+            else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
+            else LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
+                items(list, key = { it.path }) { f ->
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+                        FileRow(f, f in sel, { tap(f) }, { hold(f) },
+                            menu = {
+                                if (selecting) Checkbox(f in sel, null, Modifier.size(24.dp))
+                                else IconButton({ menuFor = f }) { Icon(Icons.Rounded.MoreVert, "More") }
+                            },
+                            where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
+                        Box(Modifier.size(1.dp)) {
+                            DropdownMenu(
+                                expanded = menuFor == f,
+                                onDismissRequest = { menuFor = null },
+                                offset = DpOffset((-12).dp, 0.dp)
+                            ) {
+                                DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; tap(f) })
+                                if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
+                                if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
+                                DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; askDel(listOf(f)) })
+                            }
                         }
                     }
                 }
             }
         }
+        if (selecting) {
+            val one = sel.size == 1
+            val first = sel.firstOrNull()
+            Row(
+                Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 12.dp, end = 12.dp, bottom = 12.dp)
+                    .fillMaxWidth().glass(shape = CircleShape).padding(vertical = 4.dp, horizontal = 6.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton({ Clip.set(sel.toList(), true); exit() }) { Icon(Icons.Rounded.ContentCut, "Cut") }
+                IconButton({ Clip.set(sel.toList(), false); exit() }) { Icon(Icons.Rounded.ContentCopy, "Copy") }
+                IconButton({ askDel(sel.toList()) }) { Icon(Icons.Rounded.Delete, "Delete") }
+                IconButton({ if (one && first != null) share(ctx, first) else shareMany(ctx, sel.filter { it.isFile }) }, enabled = sel.any { it.isFile }) { Icon(Icons.Rounded.Share, "Share") }
+                Box {
+                    IconButton({ more = true }) { Icon(Icons.Rounded.MoreVert, "More") }
+                    DropdownMenu(more, { more = false }) {
+                        if (one && first != null && first.isFile) DropdownMenuItem(text = { Text("Open with") }, leadingIcon = { Icon(Icons.Rounded.Apps, null) }, onClick = { more = false; openWith(ctx, first) })
+                        DropdownMenuItem(text = { Text("Transfer") }, leadingIcon = { Icon(Icons.Rounded.Share, null) }, enabled = sel.any { it.isFile }, onClick = {
+                            more = false
+                            TransferServer.addFiles(sel.filter { it.isFile })
+                            TransferState.open = true
+                            exit()
+                        })
+                    }
+                }
+            }
+        }
     }
-    confirmDel?.let { f ->
+    confirmDel?.let { l ->
         AlertDialog(
             onDismissRequest = { confirmDel = null },
-            title = { Text("Move to recycle bin?") },
-            text = { Text(f.name) },
-            confirmButton = {
-                TextButton(onClick = {
-                    toBin(ctx, f)
-                    if (!f.exists()) removed = removed + f.path
-                    toast(ctx, if (f.exists()) "Couldn't move to bin" else "Moved to bin")
-                    confirmDel = null
-                }) { Text("Delete") }
-            },
+            title = { Text(if (S.useBin) "Move to recycle bin?" else "Delete permanently?") },
+            text = { Text(if (l.size == 1) l[0].name else "${l.size} items") },
+            confirmButton = { TextButton(onClick = { del(l); confirmDel = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("Cancel") } }
         )
     }
@@ -335,7 +379,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.9.6", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.9.7", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
