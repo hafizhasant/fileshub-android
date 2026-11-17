@@ -13,6 +13,11 @@ import com.hierynomus.smbj.auth.AuthenticationContext
 import com.hierynomus.smbj.share.DiskShare
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
+import com.jcraft.jsch.Channel
+import com.jcraft.jsch.ChannelSftp
+import com.jcraft.jsch.JSch
+import com.jcraft.jsch.Session
+import com.jcraft.jsch.SftpATTRS
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.json.JSONArray
 import org.json.JSONObject
@@ -74,7 +79,50 @@ class SmbRemote(s: Server) : Remote {
     override fun close() { runCatching { share.close(); session.close(); conn.close(); client.close() } }
 }
 
-fun connect(s: Server): Remote = if (s.proto == "FTP") FtpRemote(s) else SmbRemote(s)
+class SftpRemote(s: Server) : Remote {
+    private val session: Session
+    private val sftp: ChannelSftp
+    
+    init {
+        val jsch = JSch()
+        session = jsch.getSession(s.user.ifBlank { "anonymous" }, s.host, s.port)
+        session.setPassword(s.pass)
+        session.setConfig("StrictHostKeyChecking", "no")
+        session.connect()
+        
+        val channel = session.openChannel("sftp") as ChannelSftp
+        channel.connect()
+        sftp = channel
+    }
+    
+    override fun list(path: String): List<RItem> {
+        val files = sftp.ls(path)
+        return files.mapNotNull { entry ->
+            val attrs = entry.attrs as SftpATTRS?
+            if (attrs != null && entry.filename != "." && entry.filename != "..") {
+                RItem(entry.filename, attrs.isDirectory, attrs.size)
+            } else null
+        }
+    }
+    
+    override fun download(path: String, out: File) {
+        sftp.get(path, out.absolutePath)
+    }
+    
+    override fun close() {
+        runCatching { sftp.exit(); session.disconnect() }
+    }
+    
+    fun delete(path: String) {
+        sftp.rm(path)
+    }
+}
+
+fun connect(s: Server): Remote = when (s.proto) {
+    "FTP" -> FtpRemote(s)
+    "SFTP" -> SftpRemote(s)
+    else -> SmbRemote(s)
+}
 
 object Servers {
     fun load(c: Context): List<Server> {
