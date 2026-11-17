@@ -100,7 +100,7 @@ class SftpRemote(s: Server) : Remote {
         return files.mapNotNull { entry ->
             val attrs = entry.attrs as SftpATTRS?
             if (attrs != null && entry.filename != "." && entry.filename != "..") {
-                RItem(entry.filename, attrs.isDirectory, attrs.size)
+                RItem(entry.filename, attrs.isDir, attrs.size)
             } else null
         }
     }
