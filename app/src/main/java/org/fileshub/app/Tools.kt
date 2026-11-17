@@ -109,7 +109,7 @@ fun makeThumb(ctx: Context, f: File): ImageBitmap? = when (f.extension.lowercase
 }
 
 // ---------- APK installer ----------
-object Pending { var apk by mutableStateOf<File?>(null) }
+object Pending { var apk by mutableStateOf<File?>(null); var image by mutableStateOf<File?>(null); var text by mutableStateOf<File?>(null) }
 
 fun installApk(ctx: Context, f: File) {
     if (!ctx.packageManager.canRequestPackageInstalls()) {

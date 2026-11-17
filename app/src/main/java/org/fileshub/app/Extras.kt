@@ -1,5 +1,8 @@
 package org.fileshub.app
 
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
+
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
@@ -21,6 +24,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.foundation.layout.size
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -150,7 +155,11 @@ fun SearchField(value: String, onChange: (String) -> Unit, mod: Modifier = Modif
 @Composable
 fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
     val ctx = LocalContext.current
+    val view = LocalView.current
     var q by remember { mutableStateOf(q0) }
+    var removed by remember { mutableStateOf(setOf<String>()) }
+    var menuFor by remember { mutableStateOf<File?>(null) }
+    var confirmDel by remember { mutableStateOf<File?>(null) }
     val res by produceState<List<File>?>(null, q) {
         if (q.isBlank()) value = emptyList() else {
             value = null; delay(300)
@@ -160,15 +169,53 @@ fun SearchScreen(q0: String, onBack: () -> Unit, onDir: (File) -> Unit) {
             }
         }
     }
-    val list = res
+    val list = res?.filter { it.path !in removed }
     Column(Modifier.fillMaxSize()) {
         TopRow("Global search", onBack)
         SearchField(q, { q = it }, Modifier.padding(horizontal = 12.dp))
         if (list == null) Text("Searching…", Modifier.padding(24.dp).alpha(.6f))
         else if (list.isEmpty()) Text(if (q.isBlank()) "Type to search all storage" else "No matches", Modifier.padding(24.dp).alpha(.6f))
         else LazyColumn(contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 100.dp)) {
-            items(list, key = { it.path }) { f -> FileRow(f, false, { if (f.isDirectory) onDir(f) else open(ctx, f) }, {}, where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" }) }
+            items(list, key = { it.path }) { f ->
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+                    FileRow(f, false,
+                        { if (f.isDirectory) onDir(f) else open(ctx, f) },
+                        {
+                            if (S.haptics) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            menuFor = f
+                        },
+                        where = (f.parent ?: "").removePrefix(ROOT.path).ifEmpty { "/" })
+                    Box(Modifier.size(1.dp)) {
+                        DropdownMenu(
+                            expanded = menuFor == f,
+                            onDismissRequest = { menuFor = null },
+                            offset = DpOffset((-12).dp, 0.dp)
+                        ) {
+                            DropdownMenuItem(text = { Text("Open") }, onClick = { menuFor = null; if (f.isDirectory) onDir(f) else open(ctx, f) })
+                            if (f.isFile) DropdownMenuItem(text = { Text("Open with") }, onClick = { menuFor = null; openWith(ctx, f) })
+                            if (f.isFile) DropdownMenuItem(text = { Text("Share") }, onClick = { menuFor = null; share(ctx, f) })
+                            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuFor = null; confirmDel = f })
+                        }
+                    }
+                }
+            }
         }
+    }
+    confirmDel?.let { f ->
+        AlertDialog(
+            onDismissRequest = { confirmDel = null },
+            title = { Text("Move to recycle bin?") },
+            text = { Text(f.name) },
+            confirmButton = {
+                TextButton(onClick = {
+                    toBin(ctx, f)
+                    if (!f.exists()) removed = removed + f.path
+                    toast(ctx, if (f.exists()) "Couldn't move to bin" else "Moved to bin")
+                    confirmDel = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDel = null }) { Text("Cancel") } }
+        )
     }
 }
 
@@ -288,7 +335,7 @@ fun DrawerContent(top: Dest, nav: (Dest) -> Unit) {
                 Switch(!S.dark, { S.dark = !it; S.save() })
             }
             DrawerItem("More Settings", Icons.Rounded.Settings, top is Dest.Settings) { nav(Dest.Settings(-1)) }
-            Text("FilesHub v0.8.2", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
+            Text("FilesHub v0.9.6", Modifier.fillMaxWidth().padding(16.dp).alpha(.5f), fontSize = 13.sp)
         }
     }
 }
