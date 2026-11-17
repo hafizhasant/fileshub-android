@@ -20,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
+import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -448,6 +449,8 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var path by remember { mutableStateOf("") }
     var tick by remember { mutableIntStateOf(0) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf<Set<String>>(emptySet()) }
     val res by produceState<Result<List<RItem>>?>(null, path, tick) {
         value = null
         value = withContext(Dispatchers.IO) { runCatching { connect(s).use { it.list(path) } } }
@@ -459,6 +462,47 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         TopRow(if (path.isEmpty()) "${s.proto} · ${s.host}" else path.substringAfterLast('/'),
             { if (path.isEmpty()) onBack() else path = path.substringBeforeLast('/', "") }) {
             IconButton({ tick++ }) { Icon(Icons.Rounded.Refresh, "Refresh") }
+            if (selectionMode) {
+                IconButton({
+                    scope.launch {
+                        val items = res?.getOrElse { emptyList() }
+                        val remote = connect(s)
+                        try {
+                            selectedItems.forEach { name ->
+                                val fullPath = if (path.isEmpty()) name else "$path/$name"
+                                remote.download(fullPath, File(ROOT, "Download/$name"))
+                            }
+                            Toast.makeText(ctx, "${selectedItems.size} files downloaded", Toast.LENGTH_SHORT).show()
+                        } finally {
+                            remote.close()
+                        }
+                        selectedItems = emptySet()
+                        selectionMode = false
+                    }
+                }) { Icon(Icons.Rounded.Download, "Download Selected") }
+                IconButton({
+                    scope.launch {
+                        if (s.proto == "SFTP") {
+                            val remote = SftpRemote(s)
+                            try {
+                                selectedItems.forEach { name ->
+                                    val fullPath = if (path.isEmpty()) name else "$path/$name"
+                                    remote.delete(fullPath)
+                                }
+                                tick++
+                                selectedItems = emptySet()
+                                selectionMode = false
+                                Toast.makeText(ctx, "${selectedItems.size} items deleted", Toast.LENGTH_SHORT).show()
+                            } finally {
+                                remote.close()
+                            }
+                        }
+                    }
+                }) { Icon(Icons.Rounded.Delete, "Delete Selected") }
+            }
+            IconButton({ selectionMode = !selectionMode; if (!selectionMode) selectedItems = emptySet() }) {
+                Icon(if (selectionMode) Icons.Rounded.Check else Icons.Rounded.SelectAll, if (selectionMode) "Exit Select" else "Select Mode")
+            }
         }
         if (r == null) Text("Connecting…", Modifier.padding(24.dp).alpha(.6f))
         else if (r.isFailure) Text("Couldn't connect: ${r.exceptionOrNull()?.message ?: "unknown error"}", Modifier.padding(24.dp))
@@ -468,18 +512,27 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
             LazyColumn(contentPadding = PaddingValues(12.dp, 0.dp, 12.dp, 100.dp)) {
                 items(items, key = { it.name }) { x ->
                     val full = if (path.isEmpty()) x.name else "$path/${x.name}"
+                    val isSelected = selectionMode && selectedItems.contains(x.name)
                     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable {
-                        if (x.dir) path = full else scope.launch {
+                        if (selectionMode) {
+                            selectedItems = if (isSelected) selectedItems - x.name else selectedItems + x.name
+                        } else if (x.dir) path = full else scope.launch {
                             val out = File(ROOT, "Download/${x.name}")
                             val e = withContext(Dispatchers.IO) { runCatching { out.parentFile?.mkdirs(); connect(s).use { it.download(full, out) } }.exceptionOrNull() }
                             if (e == null) { Toast.makeText(ctx, "Saved to Download", Toast.LENGTH_SHORT).show(); open(ctx, out) }
                             else Toast.makeText(ctx, e.message ?: "Download failed", Toast.LENGTH_LONG).show()
                         }
                     }.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(44.dp).clip(CircleShape).background(pri.copy(.18f)), contentAlignment = Alignment.Center) {
-                            Icon(if (x.dir) Icons.Rounded.Folder else Icons.Rounded.Description, null, tint = pri)
+                        if (selectionMode) {
+                            Checkbox(checked = isSelected, onCheckedChange = { checked ->
+                                selectedItems = if (checked) selectedItems + x.name else selectedItems - x.name
+                            }, modifier = Modifier.padding(end = 8.dp))
+                        } else {
+                            Box(Modifier.size(44.dp).clip(CircleShape).background(pri.copy(.18f)), contentAlignment = Alignment.Center) {
+                                Icon(if (x.dir) Icons.Rounded.Folder else Icons.Rounded.Description, null, tint = pri)
+                            }
+                            Spacer(Modifier.width(14.dp))
                         }
-                        Spacer(Modifier.width(14.dp))
                         Column(Modifier.weight(1f)) {
                             Text(x.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                             if (!x.dir) Text(fmt(x.size), fontSize = 12.sp, modifier = Modifier.alpha(.6f))

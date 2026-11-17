@@ -42,5 +42,6 @@ dependencies {
     implementation("org.tukaani:xz:1.10")
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    implementation("com.github.mwiede:jsch:0.2.17")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
