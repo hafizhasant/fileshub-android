@@ -4,10 +4,14 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -41,6 +45,60 @@ private fun kindOf(name: String): String = when (name.substringAfterLast('.', ""
     "jpg", "jpeg", "png", "gif", "webp", "heic" -> "View"
     "mp4", "mkv", "webm", "mp3", "m4a", "wav", "flac", "pdf", "txt", "md", "log", "json", "xml", "html", "csv" -> "Open"
     else -> "Save to Downloads"
+}
+
+@Composable
+private fun Breadcrumb(host: String, path: String, onNavigate: (String) -> Unit) {
+    val parts = path.split('/').filter { it.isNotEmpty() }
+    val link = MaterialTheme.colorScheme.primary
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            host,
+            color = if (parts.isEmpty()) dim else link,
+            modifier = Modifier.clickable { onNavigate("") }.padding(4.dp)
+        )
+        parts.forEachIndexed { i, seg ->
+            Icon(Icons.Rounded.ChevronRight, null, tint = dim, modifier = Modifier.size(18.dp))
+            val target = parts.take(i + 1).joinToString("/")
+            val last = i == parts.lastIndex
+            Text(
+                seg,
+                color = if (last) dim else link,
+                modifier = Modifier.clickable { onNavigate(target) }.padding(4.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ItemIcon(dir: Boolean, selected: Boolean) {
+    val bg = when {
+        selected -> MaterialTheme.colorScheme.primary
+        dir -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val fg = when {
+        selected -> MaterialTheme.colorScheme.onPrimary
+        dir -> MaterialTheme.colorScheme.onSecondaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Box(
+        Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(bg),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            if (selected) Icons.Rounded.Check else if (dir) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile,
+            null,
+            tint = fg
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -81,7 +139,6 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         selected = emptySet()
     }
 
-    // Runs one operation on its own connection, reports the real error if it fails, then refreshes.
     fun runOp(label: String, op: (Remote) -> Unit, done: () -> Unit = {}) {
         scope.launch {
             busy = true
@@ -170,11 +227,7 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         ) {
             IconButton({ tick++ }) { Icon(Icons.Rounded.Refresh, "Refresh") }
             IconButton({
-                if (selectionMode) {
-                    clearSelection()
-                } else {
-                    selectionMode = true
-                }
+                if (selectionMode) clearSelection() else selectionMode = true
             }) {
                 Icon(
                     if (selectionMode) Icons.Rounded.Check else Icons.Rounded.SelectAll,
@@ -182,6 +235,8 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
                 )
             }
         }
+
+        Breadcrumb(host = s.host, path = path) { path = it }
 
         if (busy) Text("Working…", Modifier.padding(8.dp).alpha(.6f))
 
@@ -215,19 +270,23 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
                                         showOptions = true
                                     }
                                 )
-                                .padding(8.dp),
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            if (selectionMode) {
-                                Checkbox(
-                                    checked = isSel,
-                                    onCheckedChange = null,
-                                    modifier = Modifier.padding(end = 8.dp)
-                                )
-                            }
+                            ItemIcon(dir = x.dir, selected = isSel)
+                            Spacer(Modifier.width(16.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(x.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (!x.dir) Text(humanSize(x.size), Modifier.alpha(.6f))
+                                Text(
+                                    x.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    if (x.dir) "Directory" else "File • ${humanSize(x.size)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
@@ -249,7 +308,6 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         }
     }
 
-    // Single tap on a file: type-based action first.
     tapItem?.let { x ->
         AlertDialog(
             onDismissRequest = { tapItem = null },
@@ -270,7 +328,6 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
         )
     }
 
-    // Long press or "More options": full action list for the selection.
     if (showOptions && selected.isNotEmpty()) {
         val names = selected.toList()
         AlertDialog(
@@ -299,7 +356,7 @@ fun RemoteScreen(s: Server, onBack: () -> Unit) {
                     if (sel.size == 1) {
                         val x = sel[0]
                         Text("Name: ${x.name}")
-                        Text("Type: ${if (x.dir) "Folder" else "File"}")
+                        Text("Type: ${if (x.dir) "Directory" else "File"}")
                         if (!x.dir) Text("Size: ${humanSize(x.size)}")
                         Text("Location: ${if (path.isEmpty()) "/" else "/$path"}")
                     } else {
