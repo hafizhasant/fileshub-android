@@ -26,6 +26,7 @@ class RItem(val name: String, val dir: Boolean, val size: Long)
 interface Remote : Closeable {
     fun list(path: String): List<RItem>
     fun download(path: String, out: File)
+    fun delete(path: String)
 }
 
 class FtpRemote(s: Server) : Remote {
@@ -43,6 +44,9 @@ class FtpRemote(s: Server) : Remote {
             .map { RItem(it.name, it.isDirectory, it.size) }
     override fun download(path: String, out: File) {
         out.outputStream().use { check(c.retrieveFile(path, it)) { "Download failed" } }
+    }
+    override fun delete(path: String) {
+        check(c.delete(path)) { "Delete failed" }
     }
     override fun close() { runCatching { c.logout(); c.disconnect() } }
 }
@@ -69,6 +73,29 @@ class SmbRemote(s: Server) : Remote {
     override fun download(path: String, out: File) {
         share.openFile(p(path), setOf(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null).use { f ->
             f.inputStream.use { i -> out.outputStream().use { i.copyTo(it) } }
+        }
+    }
+    override fun delete(path: String) {
+        try {
+            val smbPath = p(path)
+            // Check if path is a directory
+            val attributes = share.getAttributes(smbPath)
+            if (attributes.isDirectory) {
+                // For directories, we need to delete contents recursively first
+                val files = share.list(smbPath)
+                files.forEach { item ->
+                    if (item.fileName != "." && item.fileName != "..") {
+                        delete("$path\\${item.fileName}")
+                    }
+                }
+                // Then delete the directory itself
+                share.delete(smbPath)
+            } else {
+                // For files, delete directly
+                share.delete(smbPath)
+            }
+        } catch (e: Exception) {
+            throw Exception("Delete failed: ${e.message}")
         }
     }
     override fun close() { runCatching { share.close(); session.close(); conn.close(); client.close() } }
