@@ -444,7 +444,7 @@ fun ServersScreen(onBack: () -> Unit, onOpen: (Server) -> Unit) {
 }
 
 @Composable
-fun RemoteScreen(s: Server, onBack: () -> Unit) {
+private fun RemoteScreenOld(s: Server, onBack: () -> Unit) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var path by remember { mutableStateOf("") }
