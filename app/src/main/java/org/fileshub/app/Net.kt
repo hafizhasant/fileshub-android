@@ -31,6 +31,7 @@ class RItem(val name: String, val dir: Boolean, val size: Long)
 interface Remote : Closeable {
     fun list(path: String): List<RItem>
     fun download(path: String, out: File)
+    fun delete(path: String)
 }
 
 class FtpRemote(s: Server) : Remote {
@@ -48,6 +49,9 @@ class FtpRemote(s: Server) : Remote {
             .map { RItem(it.name, it.isDirectory, it.size) }
     override fun download(path: String, out: File) {
         out.outputStream().use { check(c.retrieveFile(path, it)) { "Download failed" } }
+    }
+    override fun delete(path: String) {
+        check(c.deleteFile(path)) { "Delete failed" }
     }
     override fun close() { runCatching { c.logout(); c.disconnect() } }
 }
@@ -74,6 +78,22 @@ class SmbRemote(s: Server) : Remote {
     override fun download(path: String, out: File) {
         share.openFile(p(path), setOf(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null).use { f ->
             f.inputStream.use { i -> out.outputStream().use { i.copyTo(it) } }
+        }
+    }
+    private fun isDirAttr(attrs: Long) = (attrs and FileAttributes.FILE_ATTRIBUTE_DIRECTORY.value) != 0L
+    override fun delete(path: String) {
+        try {
+            val smbPath = p(path)
+            if (isDirAttr(share.getFileInformation(smbPath).basicInformation.fileAttributes)) {
+                share.list(smbPath)
+                    .filter { it.fileName != "." && it.fileName != ".." }
+                    .forEach { delete("$path\\${it.fileName}") }
+                share.rmdir(smbPath, false)
+            } else {
+                share.rm(smbPath)
+            }
+        } catch (e: Exception) {
+            throw Exception("Delete failed: ${e.message}")
         }
     }
     override fun close() { runCatching { share.close(); session.close(); conn.close(); client.close() } }
@@ -113,7 +133,7 @@ class SftpRemote(s: Server) : Remote {
         runCatching { sftp.exit(); session.disconnect() }
     }
     
-    fun delete(path: String) {
+    override fun delete(path: String) {
         sftp.rm(path)
     }
 }
